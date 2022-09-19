@@ -1,0 +1,8 @@
+[workspace]
+members = ["kernel", "kernel/devices"]
+exclude = ["loader"]
+
+[profile.release]
+lto = true
+debug = false
+strip = true

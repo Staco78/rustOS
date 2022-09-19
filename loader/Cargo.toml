@@ -1,0 +1,16 @@
+[package]
+name = "loader"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = { version = "0.4", features = ["max_level_info", "release_max_level_info"] }
+uefi = { version = "0.16.0", features = ["exts", "logger"] }
+uefi-services = { version = "0.13.0", features = ["no_panic_handler"] }
+cfg-if = "1.0.0"
+static_assertions = "1.1.0"
+modular-bitfield = { git = "https://github.com/ChefKissInc/modular-bitfield" }
+elfloader = "0.16.0"
+anyhow = { version = "1.0", default-features = false }

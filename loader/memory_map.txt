@@ -1,0 +1,10 @@
+Virtual address space description when the kernel start
+
+0x0000_0000_0000_0000 => 0x0000_0080_0000_0000 (512 GB)
+Physical memory linear mapping
+
+0xFFFF_0000_0000_0000 => 0xFFFF_0080_0000_0000 (512 GB)
+Physical memory linear mapping
+
+0xFFFF_FFFF_8000_0000 => 0xFFFF_FFFF_FFFF_FFFF (2 GB)
+Kernel data and code (only needed is actually mapped to physical address)
