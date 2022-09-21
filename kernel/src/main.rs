@@ -3,6 +3,9 @@
 #![feature(lang_items)]
 #![feature(panic_info_message)]
 #![feature(strict_provenance)]
+#![feature(const_mut_refs)]
+#![feature(pointer_byte_offsets)]
+#![feature(default_alloc_error_handler)]
 #![allow(improper_ctypes_definitions)]
 
 mod acpi;
@@ -11,6 +14,8 @@ mod interrupts;
 mod logger;
 mod memory;
 mod utils;
+
+extern crate alloc;
 
 use core::{
     fmt::Write,

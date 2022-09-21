@@ -13,6 +13,7 @@ devices = { path = "./devices" }
 cfg-if = "1.0.0"
 modular-bitfield = { git = "https://github.com/ChefKissInc/modular-bitfield" }
 bitflags = "1.3.2"
+spin = "0.9.4"
 
 [features]
 qemu_debug = []

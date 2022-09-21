@@ -2,7 +2,7 @@ use crate::utils::ByteSize;
 
 use super::{CustomMemoryTypes, PhysicalAddress, PAGE_SIZE};
 use core::slice;
-use log::{debug, trace};
+use log::trace;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 static mut PHYSICAL_MANAGER: Option<PhysicalMemoryManager> = None;
@@ -217,6 +217,16 @@ impl PhysicalMemoryManager {
     #[inline(always)]
     pub fn alloc_page(&mut self) -> Result<PhysicalAddress, PhysicalAllocError> {
         self.alloc_pages(1)
+    }
+
+    pub fn unalloc_pages(&mut self, addr: PhysicalAddress, count: usize) {
+        assert!(addr % PAGE_SIZE == 0);
+        self.set_free_range(addr / PAGE_SIZE, count);
+    }
+
+    #[inline(always)]
+    pub fn unalloc_page(&mut self, addr: PhysicalAddress) {
+        self.unalloc_pages(addr, 1)
     }
 }
 

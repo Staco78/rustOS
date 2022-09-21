@@ -1,4 +1,4 @@
-use super::{pmm::PhysicalMemoryManager, PhysicalAddress, VirtualAddress};
+use super::{pmm::PhysicalMemoryManager, PageAllocator, PhysicalAddress, VirtualAddress};
 use crate::{
     memory::{pmm::PhysicalAllocError, PAGE_SIZE},
     read_cpu_reg,
@@ -6,10 +6,11 @@ use crate::{
 use core::{fmt::Display, ptr, slice};
 use log::trace;
 use modular_bitfield::prelude::*;
+use spin::{Mutex, MutexGuard};
 
 static mut USER_ADDR_SPACE: Option<VirtualAddressSpace> = None;
 static mut KERNEL_ADDR_SPACE: Option<VirtualAddressSpace> = None;
-static mut VIRTUAL_MANAGER: Option<VirtualMemoryManager> = None;
+pub static mut VIRTUAL_MANAGER: Option<Mutex<VirtualMemoryManager>> = None;
 
 pub const KERNEL_HEAP_START: usize = 0xFFFF_0080_0000_0000;
 pub const KERNEL_HEAP_END: usize = 0xFFFF_0100_0000_0000; // size: 512 GB
@@ -26,14 +27,15 @@ pub fn init(pmm: &'static mut PhysicalMemoryManager) {
         USER_ADDR_SPACE = Some(VirtualAddressSpace::new(ttbr0 as *mut TableEntry, true));
         KERNEL_ADDR_SPACE = Some(VirtualAddressSpace::new(ttbr1 as *mut TableEntry, false));
 
-        VIRTUAL_MANAGER = Some(VirtualMemoryManager::new(pmm))
+        VIRTUAL_MANAGER = Some(Mutex::new(VirtualMemoryManager::new(pmm)))
     };
 }
 
 // safety: safe to call after init()
 #[inline]
-pub unsafe fn vmm() -> &'static mut VirtualMemoryManager<'static> {
-    VIRTUAL_MANAGER.as_mut().unwrap()
+#[allow(unused)]
+pub unsafe fn vmm() -> MutexGuard<'static, VirtualMemoryManager<'static>> {
+    VIRTUAL_MANAGER.as_mut().unwrap().lock()
 }
 
 fn get_current_addr_space(addr: usize) -> &'static mut VirtualAddressSpace {
@@ -250,6 +252,46 @@ impl<'a> VirtualMemoryManager<'a> {
         Ok(from)
     }
 
+    // unmap virtual address "addr" and return the physical address where it was mapped
+    pub fn unmap_page(
+        &mut self,
+        addr: VirtualAddress,
+        addr_space: Option<&mut VirtualAddressSpace>,
+    ) -> Result<PhysicalAddress> {
+        trace!(target: "vmm", "Unmap {:p}", addr as *const u8);
+        let addr_space = addr_space.unwrap_or_else(|| get_current_addr_space(addr));
+
+        let mut current_level: &mut [TableEntry] = addr_space.ptr;
+        let max_level = if addr_space.user { 2 } else { 3 };
+        for l in 0..max_level {
+            let entry = &mut current_level[get_page_level_index(addr, PageLevel::from(l))];
+            let entry_desc = unsafe { &entry.table_descriptor };
+
+            if !entry_desc.present() || entry_desc.block_or_table() == 0 {
+                return Err(VmmError::NotMapped);
+            }
+
+            current_level = unsafe {
+                slice::from_raw_parts_mut(
+                    (entry_desc.address() << 12) as *mut TableEntry,
+                    PAGE_SIZE / 8,
+                )
+            };
+        }
+
+        let entry = &mut current_level[get_page_level_index(addr, PageLevel::L3)];
+        let entry_desc = unsafe { &mut entry.table_descriptor };
+
+        if !entry_desc.present() {
+            return Err(VmmError::NotMapped);
+        }
+
+        let addr = entry_desc.address() << 12;
+        entry_desc.set_present(false);
+
+        Ok(addr as PhysicalAddress)
+    }
+
     fn find_free_pages(
         &self,
         count: usize,
@@ -418,6 +460,49 @@ impl<'a> VirtualMemoryManager<'a> {
 
         Ok(virtual_addr)
     }
+
+    pub fn dealloc_pages(
+        &mut self,
+        addr: VirtualAddress,
+        count: usize,
+        mut addr_space: Option<&mut VirtualAddressSpace>,
+    ) -> Result<()> {
+        trace!(target: "vmm", "Dealloc {} pages at addr {:p}", count, addr as *const u8);
+        for i in 0..count {
+            let phys_addr = self.unmap_page(
+                addr + i * PAGE_SIZE,
+                addr_space.as_mut().map_or(None, |a| Some(a)),
+            )?;
+            self.physical.unalloc_page(phys_addr);
+        }
+        Ok(())
+    }
+}
+
+pub struct VmmPageAllocator<'a> {
+    vmm: &'a Mutex<VirtualMemoryManager<'a>>,
+}
+
+impl<'a> VmmPageAllocator<'a> {
+    pub fn new(vmm: &'a Mutex<VirtualMemoryManager<'a>>) -> Self {
+        Self { vmm }
+    }
+}
+
+impl<'a> PageAllocator for VmmPageAllocator<'a> {
+   unsafe fn alloc(&self, count: usize) -> *mut u8 {
+        let mut guard = self.vmm.lock();
+        let r = guard.alloc_pages(count, MemoryUsage::KernelHeap, None);
+        match r {
+            Ok(addr) => addr as *mut u8,
+            Err(_) => ptr::null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: usize, count: usize) {
+        assert!(ptr % PAGE_SIZE == 0);
+        self.vmm.lock().dealloc_pages(ptr, count, None).unwrap()
+    }
 }
 
 pub struct VirtualAddressSpace {
@@ -444,6 +529,7 @@ impl Display for VirtualAddressSpace {
 #[derive(Debug)]
 pub enum VmmError {
     AlreadyMapped,
+    NotMapped,
     OutOfMemory,
     OutOfVirtualSpace,
     InvalidAddrSpace,
