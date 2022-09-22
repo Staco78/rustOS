@@ -7,8 +7,16 @@ pub struct KernelLogger {}
 static LOGGER: KernelLogger = KernelLogger {};
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
+const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", " vmm", "kernel_heap"];
+
 impl log::Log for KernelLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
+        if TARGET_BLACKLIST_TRACE
+            .iter()
+            .any(|s| *s == metadata.target())
+        {
+            return false;
+        }
         metadata.level() <= log::STATIC_MAX_LEVEL
     }
 
@@ -30,7 +38,7 @@ impl log::Log for KernelLogger {
                 }
             };
 
-            let level = record.metadata().level();
+            let level = record.level();
             let color = match level {
                 Level::Error => "\x1B[91m", // red and bold
                 Level::Warn => "\x1B[93m",  // yellow and bold
@@ -42,8 +50,9 @@ impl log::Log for KernelLogger {
             if level != Level::Info {
                 write!(output, "[{}] ", level).unwrap();
             }
-            let target = record.metadata().target();
-            if target != "kernel" {
+            let target = record.target();
+            // dont't show automatic target
+            if !target.contains("::") {
                 write!(output, "{}: ", target).unwrap();
             }
             writeln!(output, "{}", record.args()).unwrap();
