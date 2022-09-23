@@ -24,7 +24,6 @@ KERNEL_SRCS=$(shell find ./kernel/src/)
 LOADER_SRCS=$(shell find ./loader/src/)
 
 
-
 run: build
 	$(QEMU) $(QEMU_FLAGS)
 

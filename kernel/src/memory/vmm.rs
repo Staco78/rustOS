@@ -3,7 +3,7 @@ use crate::{
     memory::{pmm::PhysicalAllocError, PAGE_SIZE},
     read_cpu_reg,
 };
-use core::{fmt::Display, ptr, slice};
+use core::{arch::asm, fmt::Display, ptr, slice};
 use log::trace;
 use modular_bitfield::prelude::*;
 use spin::{Mutex, MutexGuard};
@@ -190,6 +190,21 @@ fn get_page_level_index(addr: VirtualAddress, level: PageLevel) -> usize {
     }
 }
 
+#[inline]
+fn invalidate_addr(addr: VirtualAddress) {
+    unsafe {
+        let v = addr >> 12;
+        asm!(
+            "dsb ishst",
+            "tlbi vaae1is, {}",
+            "dsb ish",
+            "isb",
+            in(reg) v,
+            options(preserves_flags)
+        );
+    }
+}
+
 pub struct VirtualMemoryManager<'a> {
     physical: &'a mut PhysicalMemoryManager,
 }
@@ -288,6 +303,8 @@ impl<'a> VirtualMemoryManager<'a> {
 
         let addr = entry_desc.address() << 12;
         entry_desc.set_present(false);
+
+        invalidate_addr(addr as VirtualAddress);
 
         Ok(addr as PhysicalAddress)
     }
@@ -490,7 +507,7 @@ impl<'a> VmmPageAllocator<'a> {
 }
 
 impl<'a> PageAllocator for VmmPageAllocator<'a> {
-   unsafe fn alloc(&self, count: usize) -> *mut u8 {
+    unsafe fn alloc(&self, count: usize) -> *mut u8 {
         let mut guard = self.vmm.lock();
         let r = guard.alloc_pages(count, MemoryUsage::KernelHeap, None);
         match r {
