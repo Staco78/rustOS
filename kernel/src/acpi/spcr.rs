@@ -29,7 +29,7 @@ pub enum TerminalType {
 
 assert_eq_size!(TerminalType, u8);
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 pub enum SerialType {
     Unknown,
     // revision 1

@@ -369,9 +369,7 @@ impl<'a> VirtualMemoryManager<'a> {
         if get_page_level_index(min_address, PageLevel::L0) + 1
             == get_page_level_index(max_address, PageLevel::L0)
         {
-            if max_l1_index == 0 {
-                max_l1_index = 511;
-            }
+            max_l1_index = 511;
         }
 
         let mut size = 0; // current consecutive free pages found

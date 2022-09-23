@@ -81,7 +81,7 @@ pub struct RsdtEntriesIterator {
 impl RsdtEntriesIterator {
     unsafe fn new(rsdt: *const Rsdt) -> Self {
         let length = ((*rsdt).header.length as usize - size_of::<Rsdt>()) / size_of::<u32>();
-        let entries = slice::from_raw_parts(rsdt.add(size_of::<Rsdt>()) as *const u32, length);
+        let entries = slice::from_raw_parts(rsdt.add(1) as *const u32, length);
         Self { index: 0, entries }
     }
 }
@@ -114,7 +114,7 @@ impl XsdtEntriesIterator {
         Self {
             index: 0,
             length,
-            entries: (xsdt as *const u8).add(size_of::<Xsdt>()) as *const u64,
+            entries: xsdt.add(1) as *const u64,
         }
     }
 }

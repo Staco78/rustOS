@@ -67,10 +67,8 @@ impl PhysicalMemoryManager {
     // find free space in memory map (used for find where to put the bitmap)
     fn get_free_space(memory_map: &[MemoryDescriptor], page_count: usize) -> Option<usize> {
         for desc in memory_map {
-            if Self::is_memory_type_usable(desc.ty) {
-                if desc.page_count as usize >= page_count {
-                    return Some(desc.phys_start as usize);
-                }
+            if Self::is_memory_type_usable(desc.ty) && desc.page_count as usize >= page_count {
+                return Some(desc.phys_start as usize);
             }
         }
         None

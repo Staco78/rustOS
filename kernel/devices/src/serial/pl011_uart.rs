@@ -36,7 +36,7 @@ impl Write for Pl011 {
         }
 
         if c == '\n' {
-            self.output_byte('\r' as u8);
+            self.output_byte(b'\r');
         }
 
         Ok(())

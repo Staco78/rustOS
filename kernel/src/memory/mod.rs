@@ -37,6 +37,7 @@ pub fn init(memory_map: &'static [MemoryDescriptor]) {
 // custom memory types defined in memory map by loader
 #[derive(Debug)]
 #[allow(unused)]
+#[repr(u32)]
 pub enum CustomMemoryTypes {
     Kernel = 0x80000000,
     MemoryMap = 0x80000001,
