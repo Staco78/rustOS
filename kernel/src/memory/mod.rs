@@ -2,35 +2,34 @@ use core::mem::MaybeUninit;
 
 use uefi::table::boot::MemoryDescriptor;
 
+mod constants;
 mod heap;
+mod mmu;
 mod pmm;
 mod vmm;
 
 pub use pmm::physical;
-pub use vmm::{vmm, MemoryUsage, VmmError};
+pub use vmm::{vmm, MemoryUsage};
 
-use self::vmm::VmmPageAllocator;
+use self::pmm::PmmPageAllocator;
 
 type PhysicalAddress = usize;
 type VirtualAddress = usize;
 
-const PAGE_SIZE: usize = 0x1000; // 4KB
-
 #[global_allocator]
 static mut ALLOCATOR: heap::Allocator = heap::Allocator::new();
-static mut PAGE_ALLOCATOR: MaybeUninit<VmmPageAllocator> = MaybeUninit::uninit();
+static mut PMM_PAGE_ALLOCATOR: MaybeUninit<PmmPageAllocator> = MaybeUninit::uninit();
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
-    pmm::init(memory_map);
     unsafe {
-        vmm::init(physical());
-    }
-
-    unsafe {
-        PAGE_ALLOCATOR.write(VmmPageAllocator::new(
-            vmm::VIRTUAL_MANAGER.as_ref().unwrap_unchecked(),
+        pmm::init(memory_map);
+        PMM_PAGE_ALLOCATOR.write(PmmPageAllocator::new(
+            &pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
         ));
-        ALLOCATOR.init(PAGE_ALLOCATOR.assume_init_ref());
+
+        vmm::init(PMM_PAGE_ALLOCATOR.assume_init_ref());
+
+        ALLOCATOR.init(vmm());
     }
 }
 

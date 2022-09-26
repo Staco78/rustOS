@@ -6,6 +6,9 @@
 #![feature(const_mut_refs)]
 #![feature(pointer_byte_offsets)]
 #![feature(default_alloc_error_handler)]
+#![feature(adt_const_params)]
+
+#![allow(incomplete_features)]
 #![allow(improper_ctypes_definitions)]
 
 mod acpi;
@@ -23,6 +26,7 @@ use core::{
 };
 
 use acpi::AcpiParser;
+use alloc::vec;
 use devices::pl011_uart;
 use interrupts::exceptions;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
@@ -60,4 +64,6 @@ extern "C" fn main(config_tables: &[ConfigTableEntry], memory_map: &'static [Mem
     }
 
     memory::init(memory_map);
+
+    vec![0; 3];
 }

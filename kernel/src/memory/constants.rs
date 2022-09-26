@@ -1,0 +1,24 @@
+#![allow(unused)]
+
+use core::mem::size_of;
+
+pub const PAGE_SHIFT: usize = 12;
+pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT; // 4 KB
+pub const ENTRIES_IN_TABLE: usize = PAGE_SIZE / size_of::<usize>();
+
+pub const USER_VIRT_SPACE_START: usize = 0;
+pub const USER_VIRT_SPACE_END: usize = 0x8000000000;
+pub const USER_VIRT_SPACE_SIZE: usize = USER_VIRT_SPACE_END - USER_VIRT_SPACE_START; // 512 GB
+
+pub const KERNEL_VIRT_SPACE_START: usize = 0;
+pub const KERNEL_VIRT_SPACE_END: usize = 0x1000000000000;
+pub const KERNEL_VIRT_SPACE_SIZE: usize = KERNEL_VIRT_SPACE_END - KERNEL_VIRT_SPACE_END; // 256 TB
+
+pub const PHYSICAL_LINEAR_MAPPING_START: usize = 0xFFFF_0000_0000_0000;
+pub const PHYSICAL_LINEAR_MAPPING_END: usize = 0xFFFF_0080_0000_0000;
+pub const PHYSICAL_LINEAR_MAPPING_SIZE: usize =
+    PHYSICAL_LINEAR_MAPPING_END - PHYSICAL_LINEAR_MAPPING_START; // 512 GB
+
+pub const KERNEL_HEAP_START: usize = 0xFFFF_0080_0000_0000;
+pub const KERNEL_HEAP_END: usize = 0xFFFF_0100_0000_0000;
+pub const KERNEL_HEAP_SIZE: usize = KERNEL_HEAP_END - KERNEL_HEAP_START; // 512 GB

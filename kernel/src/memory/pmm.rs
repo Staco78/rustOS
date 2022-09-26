@@ -1,20 +1,22 @@
 use crate::utils::ByteSize;
 
-use super::{CustomMemoryTypes, PhysicalAddress, PAGE_SIZE};
-use core::slice;
+use super::{constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress};
+use core::{ptr, slice};
 use log::trace;
+use spin::{Mutex, MutexGuard};
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
-static mut PHYSICAL_MANAGER: Option<PhysicalMemoryManager> = None;
+pub static mut PHYSICAL_MANAGER: Option<Mutex<PhysicalMemoryManager>> = None;
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
-    unsafe { PHYSICAL_MANAGER = Some(PhysicalMemoryManager::new(memory_map)) };
+    unsafe { PHYSICAL_MANAGER = Some(Mutex::new(PhysicalMemoryManager::new(memory_map))) };
 }
 
 // safety: safe to call after init()
 #[inline]
-pub unsafe fn physical() -> &'static mut PhysicalMemoryManager {
-    PHYSICAL_MANAGER.as_mut().unwrap()
+#[allow(unused)]
+pub unsafe fn physical() -> MutexGuard<'static, PhysicalMemoryManager> {
+    PHYSICAL_MANAGER.as_mut().unwrap().lock()
 }
 
 pub struct PhysicalMemoryManager {
@@ -212,23 +214,36 @@ impl PhysicalMemoryManager {
         Ok(pages * PAGE_SIZE)
     }
 
-    #[inline(always)]
-    pub fn alloc_page(&mut self) -> Result<PhysicalAddress, PhysicalAllocError> {
-        self.alloc_pages(1)
-    }
-
     pub fn unalloc_pages(&mut self, addr: PhysicalAddress, count: usize) {
         assert!(addr % PAGE_SIZE == 0);
         self.set_free_range(addr / PAGE_SIZE, count);
-    }
-
-    #[inline(always)]
-    pub fn unalloc_page(&mut self, addr: PhysicalAddress) {
-        self.unalloc_pages(addr, 1)
     }
 }
 
 #[derive(Debug)]
 pub enum PhysicalAllocError {
     OutOfMemory,
+}
+
+pub struct PmmPageAllocator<'a> {
+    pmm: &'a Mutex<PhysicalMemoryManager>,
+}
+
+impl<'a> PmmPageAllocator<'a> {
+    pub fn new(pmm: &'a Mutex<PhysicalMemoryManager>) -> Self {
+        Self { pmm }
+    }
+}
+
+impl<'a> PageAllocator for PmmPageAllocator<'a> {
+    unsafe fn alloc(&self, count: usize) -> *mut u8 {
+        match self.pmm.lock().alloc_pages(count) {
+            Ok(addr) => addr as *mut u8,
+            Err(_) => ptr::null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: usize, count: usize) {
+        self.pmm.lock().unalloc_pages(ptr, count)
+    }
 }

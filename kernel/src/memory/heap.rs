@@ -6,7 +6,7 @@ use static_assertions::assert_eq_align;
 
 use crate::utils::ByteSize;
 
-use super::{PageAllocator, PAGE_SIZE};
+use super::{PageAllocator, constants::PAGE_SIZE};
 
 const MIN_PAGE_COUNT: usize = 16; // minimum page count to alloc from page allocator
 
