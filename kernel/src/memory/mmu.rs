@@ -169,6 +169,19 @@ fn invalidate_addr(addr: VirtualAddress) {
 }
 
 #[inline]
+pub fn invalidate_tlb_all() {
+    unsafe {
+        asm!(
+            "dsb ishst",
+            "tlbi vmalle1",
+            "dsb ish",
+            "isb",
+            options(preserves_flags)
+        )
+    }
+}
+
+#[inline]
 fn get_table(addr: VirtualAddress) -> &'static [TableEntry] {
     unsafe { slice::from_raw_parts(addr as *const TableEntry, ENTRIES_IN_TABLE) }
 }
@@ -339,7 +352,7 @@ impl<'a> Mmu<'a> {
                 if page.is_null() {
                     return Err(TableCreateError::PageAllocFailed);
                 }
-                ptr::write_bytes(page, 0, PAGE_SIZE); // clear page
+                ptr::write_bytes(phys_to_virt(page as usize) as *mut u8, 0, PAGE_SIZE); // clear page
 
                 *entry = TableEntry::create_table_descriptor(page.addr());
                 Ok(get_table_mut(phys_to_virt(entry.addr())))

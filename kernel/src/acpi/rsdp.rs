@@ -1,5 +1,7 @@
 use core::{ffi::c_void, mem::size_of, slice};
 
+use crate::memory::vmm::phys_to_virt;
+
 use super::sdt::SdtHeader;
 
 const RSDP_SIGNATURE: [u8; 8] = *b"RSD PTR ";
@@ -41,7 +43,7 @@ impl Rsdp {
             RSDP_V1_SIZE
         };
 
-        let bytes = unsafe { slice::from_raw_parts(s as *const Rsdp as *const u8, length) };
+        let bytes = unsafe { slice::from_raw_parts(ptr as usize as *const u8, length) };
         let sum = bytes.iter().fold(0u8, |sum, &byte| sum.wrapping_add(byte));
 
         if sum != 0 {
@@ -58,12 +60,12 @@ impl Rsdp {
 
     pub fn rsdt_tables(&self) -> RsdtEntriesIterator {
         assert!(self.rsdt_ptr != 0);
-        unsafe { RsdtEntriesIterator::new(self.rsdt_ptr as *const Rsdt) }
+        unsafe { RsdtEntriesIterator::new(phys_to_virt(self.rsdt_ptr as usize) as *const Rsdt) }
     }
 
     pub fn xsdt_tables(&self) -> XsdtEntriesIterator {
         assert!(self.xsdt_ptr != 0);
-        unsafe { XsdtEntriesIterator::new(self.xsdt_ptr as *const Xsdt) }
+        unsafe { XsdtEntriesIterator::new(phys_to_virt(self.xsdt_ptr as usize) as *const Xsdt) }
     }
 }
 
@@ -90,7 +92,7 @@ impl Iterator for RsdtEntriesIterator {
     type Item = *const SdtHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.entries.get(self.index).map(|p| *p as *const SdtHeader);
+        let ptr = self.entries.get(self.index).map(|p| phys_to_virt(*p as usize) as *const SdtHeader);
         self.index += 1;
         ptr
     }
@@ -128,6 +130,6 @@ impl Iterator for XsdtEntriesIterator {
         }
         let ptr = unsafe { self.entries.add(self.index).read_unaligned() };
         self.index += 1;
-        Some(ptr as Self::Item)
+        Some(phys_to_virt(ptr as usize) as Self::Item)
     }
 }

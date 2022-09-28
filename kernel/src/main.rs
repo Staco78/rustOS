@@ -1,15 +1,10 @@
 #![no_std]
 #![no_main]
-#![feature(lang_items)]
 #![feature(panic_info_message)]
 #![feature(strict_provenance)]
-#![feature(const_mut_refs)]
 #![feature(pointer_byte_offsets)]
 #![feature(default_alloc_error_handler)]
-#![feature(adt_const_params)]
-
 #![allow(incomplete_features)]
-#![allow(improper_ctypes_definitions)]
 
 mod acpi;
 mod cpu;
@@ -23,26 +18,41 @@ extern crate alloc;
 use core::{
     fmt::Write,
     mem::{self, MaybeUninit},
+    slice,
 };
 
 use acpi::AcpiParser;
-use alloc::vec;
 use devices::pl011_uart;
 use interrupts::exceptions;
+use memory::PhysicalAddress;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
 
-use crate::acpi::{
-    sdt::Signature,
-    spcr::{self, Spcr},
+use crate::{
+    acpi::{
+        sdt::Signature,
+        spcr::{self, Spcr},
+    },
+    memory::vmm::{self, phys_to_virt},
 };
 
 pub static mut ACPI_TABLES: MaybeUninit<AcpiParser> = MaybeUninit::uninit();
 
 #[export_name = "start"]
-extern "C" fn main(config_tables: &[ConfigTableEntry], memory_map: &'static [MemoryDescriptor]) {
+extern "C" fn main(
+    config_tables_ptr: PhysicalAddress,
+    config_table_len: u32,
+    memory_map_ptr: PhysicalAddress,
+    memory_map_len: u32,
+) {
     logger::init();
     exceptions::init();
 
+    let config_tables = unsafe {
+        slice::from_raw_parts(
+            vmm::phys_to_virt(config_tables_ptr) as *const ConfigTableEntry,
+            config_table_len as usize,
+        )
+    };
     let acpi_parser = AcpiParser::parse_tables(config_tables).unwrap();
     unsafe { ACPI_TABLES.write(acpi_parser) };
     let mut console_writer = unsafe {
@@ -51,7 +61,9 @@ extern "C" fn main(config_tables: &[ConfigTableEntry], memory_map: &'static [Mem
             .get_table::<Spcr>(Signature::SPCR)
         {
             if (*table).get_serial_type() == spcr::SerialType::Pl011UART {
-                Some(pl011_uart::Pl011::new((*table).address.address))
+                Some(pl011_uart::Pl011::new(phys_to_virt(
+                    (*table).address.address as usize,
+                )))
             } else {
                 None
             }
@@ -63,7 +75,11 @@ extern "C" fn main(config_tables: &[ConfigTableEntry], memory_map: &'static [Mem
         logger::set_output(unsafe { mem::transmute(writer as &mut dyn Write) });
     }
 
+    let memory_map = unsafe {
+        slice::from_raw_parts(
+            vmm::phys_to_virt(memory_map_ptr) as *const MemoryDescriptor,
+            memory_map_len as usize,
+        )
+    };
     memory::init(memory_map);
-
-    vec![0; 3];
 }

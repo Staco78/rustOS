@@ -2,32 +2,34 @@
 #![no_std]
 #![feature(abi_efiapi)]
 #![feature(panic_info_message)]
-#![allow(incomplete_features)]
-#![allow(improper_ctypes_definitions)]
+#![feature(strict_provenance)]
 
 mod cpu;
 mod memory;
 
 extern crate alloc;
 
-use core::{intrinsics::transmute, mem::size_of, slice};
+use core::{arch::asm, mem::size_of, slice};
 
 use alloc::boxed::Box;
 use elfloader::{
     ElfBinary, ElfLoader, ElfLoaderErr, Flags, LoadableHeaders, RelocationEntry, VAddr,
 };
 use log::info;
+use memory::PAGE_SIZE;
 use uefi::{
     prelude::*,
     proto::media::file::{File, FileAttribute, FileInfo, FileMode},
     table::{
         boot::{AllocateType, MemoryDescriptor, MemoryType},
-        cfg::ConfigTableEntry,
         Runtime,
     },
 };
 
-use crate::memory::{VirtualAddress, CustomMemoryTypes};
+use crate::memory::{CustomMemoryTypes, VirtualAddress};
+
+const KERNEL_STACK_PAGES_COUNT: usize = 16;
+const KERNEL_LINEAR_MAP_OFFSET: usize = 0xFFFF_0000_0000_0000;
 
 #[entry]
 fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -37,16 +39,33 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     memory::init();
 
     let kernel_entry = load_kernel(handle, &system_table);
+    let kernel_stack_addr = system_table.boot_services().allocate_pages(
+        AllocateType::AnyPages,
+        MemoryType::custom(CustomMemoryTypes::KernelStack as u32),
+        KERNEL_STACK_PAGES_COUNT,
+    )? + (KERNEL_STACK_PAGES_COUNT * PAGE_SIZE) as u64
+        + KERNEL_LINEAR_MAP_OFFSET as u64;
     let (system_table, memory_map) = exit_boot_services(handle, system_table);
     unsafe {
-        let kernel_entry =
-            transmute::<u64, extern "C" fn(&[ConfigTableEntry], &[MemoryDescriptor])>(kernel_entry);
         info!("Running kernel...");
-        kernel_entry(system_table.config_table(), memory_map);
-    }
 
-    info!("Halting CPU");
-    cpu::halt();
+        let config_tables_ptr = system_table.config_table().as_ptr().addr();
+        let config_table_len: u32 = system_table.config_table().len() as u32;
+        let memory_map_ptr = memory_map.as_ptr().addr();
+        let memory_map_len: u32 = memory_map.len() as u32;
+
+        asm!(
+            "mov sp, {}",
+            "br {}",
+            in(reg) kernel_stack_addr,
+            in(reg) kernel_entry,
+            in("x0") config_tables_ptr,
+            in("x1") config_table_len,
+            in("x2") memory_map_ptr,
+            in("x3") memory_map_len,
+        ); // this should never return
+        unreachable!();
+    }
 }
 
 // exit boot services and return memory map
@@ -59,7 +78,10 @@ fn exit_boot_services(
     let mem_map_size = bt.memory_map_size();
     let buff_size = mem_map_size.map_size + 2 * mem_map_size.entry_size;
     let buff = bt
-        .allocate_pool(MemoryType::custom(CustomMemoryTypes::MemoryMap as u32), buff_size)
+        .allocate_pool(
+            MemoryType::custom(CustomMemoryTypes::MemoryMap as u32),
+            buff_size,
+        )
         .unwrap();
     let real_map_size = bt.memory_map_size();
     assert!(real_map_size.entry_size >= size_of::<MemoryDescriptor>());

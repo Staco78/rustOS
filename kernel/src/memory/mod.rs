@@ -1,20 +1,21 @@
 use core::mem::MaybeUninit;
 
+use crate::{memory::mmu::invalidate_tlb_all, write_cpu_reg};
 use uefi::table::boot::MemoryDescriptor;
 
 mod constants;
 mod heap;
 mod mmu;
 mod pmm;
-mod vmm;
+pub mod vmm;
 
 pub use pmm::physical;
 pub use vmm::{vmm, MemoryUsage};
 
 use self::pmm::PmmPageAllocator;
 
-type PhysicalAddress = usize;
-type VirtualAddress = usize;
+pub type PhysicalAddress = usize;
+pub type VirtualAddress = usize;
 
 #[global_allocator]
 static mut ALLOCATOR: heap::Allocator = heap::Allocator::new();
@@ -30,6 +31,9 @@ pub fn init(memory_map: &'static [MemoryDescriptor]) {
         vmm::init(PMM_PAGE_ALLOCATOR.assume_init_ref());
 
         ALLOCATOR.init(vmm());
+
+        write_cpu_reg!("TTBR0_EL1", 0); // clear TTBR0
+        invalidate_tlb_all();
     }
 }
 

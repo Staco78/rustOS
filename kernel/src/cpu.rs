@@ -92,11 +92,10 @@ impl Display for InterruptFrame {
     }
 }
 
-
 #[macro_export]
 macro_rules! read_cpu_reg {
     ($r:expr) => {
-        unsafe {
+        {
             let mut o: u64;
             core::arch::asm!(concat!("mrs {}, ", $r), out(reg) o);
             o
@@ -107,7 +106,7 @@ macro_rules! read_cpu_reg {
 #[macro_export]
 macro_rules! write_cpu_reg {
     ($r:expr, $v:expr) => {
-        unsafe {
+        {
             core::arch::asm!(concat!("msr ", $r, ", {}"), in(reg) $v as u64);
         }
     };

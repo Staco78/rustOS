@@ -1,5 +1,7 @@
 mod mmu;
 
+pub const PAGE_SIZE: usize = 4096;
+
 pub struct VirtualAddress(pub u64);
 pub type PhysicalAddress = u64;
 
@@ -30,4 +32,5 @@ pub use mmu::map_page;
 pub enum CustomMemoryTypes {
     Kernel = 0x80000000,
     MemoryMap = 0x80000001,
+    KernelStack = 0x80000002,
 }

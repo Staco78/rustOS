@@ -2,14 +2,15 @@ use core::fmt::Write;
 
 #[derive(Debug)]
 pub struct Pl011 {
-    base: u64,
+    base: usize,
 }
 
 impl Pl011 {
-    pub const fn new(base: u64) -> Self {
+    pub const fn new(base: usize) -> Self {
         Self { base }
     }
 
+    #[inline]
     fn output_byte(&mut self, byte: u8) {
         unsafe {
             *(self.base as *mut u8) = byte;

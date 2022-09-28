@@ -2,9 +2,9 @@ mod rsdp;
 pub mod sdt;
 pub mod spcr;
 
-use crate::acpi::sdt::Signature;
+use crate::{acpi::sdt::Signature, memory::vmm::phys_to_virt};
 
-use core::mem::MaybeUninit;
+use core::{ffi::c_void, mem::MaybeUninit};
 
 use static_assertions::assert_eq_size;
 use uefi::table::cfg::{ConfigTableEntry, ACPI2_GUID, ACPI_GUID};
@@ -26,9 +26,9 @@ impl AcpiParser {
         let mut acpi2 = None;
         for table in tables {
             if table.guid == ACPI_GUID {
-                acpi = Some(table.address);
+                acpi = Some(phys_to_virt(table.address.addr()) as *const c_void);
             } else if table.guid == ACPI2_GUID {
-                acpi2 = Some(table.address);
+                acpi2 = Some(phys_to_virt(table.address.addr()) as *const c_void);
             }
         }
 
@@ -59,8 +59,7 @@ impl AcpiParser {
             if self.revision > 0 {
                 self.xsdt_iter.assume_init_mut() as &mut dyn Iterator<Item = *const SdtHeader>
             } else {
-                self.rsdt_iter.as_mut_ptr().as_mut().unwrap()
-                    as &mut dyn Iterator<Item = *const SdtHeader>
+                self.rsdt_iter.assume_init_mut() as &mut dyn Iterator<Item = *const SdtHeader>
             }
         }
     }

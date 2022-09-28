@@ -1,8 +1,10 @@
 use crate::utils::ByteSize;
 
-use super::{constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress};
+use super::{
+    constants::PAGE_SIZE, vmm::phys_to_virt, CustomMemoryTypes, PageAllocator, PhysicalAddress,
+};
 use core::{ptr, slice};
-use log::trace;
+use log::{error, trace};
 use spin::{Mutex, MutexGuard};
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
@@ -32,7 +34,7 @@ impl PhysicalMemoryManager {
             .expect("Cannot find free space for pmm bitmap");
         let bitmap = unsafe {
             slice::from_raw_parts_mut(
-                bitmap_ptr as *mut u8,
+                phys_to_virt(bitmap_ptr) as *mut u8,
                 (bitmap_page_count * PAGE_SIZE) as usize,
             )
         };
@@ -239,7 +241,10 @@ impl<'a> PageAllocator for PmmPageAllocator<'a> {
     unsafe fn alloc(&self, count: usize) -> *mut u8 {
         match self.pmm.lock().alloc_pages(count) {
             Ok(addr) => addr as *mut u8,
-            Err(_) => ptr::null_mut(),
+            Err(e) => {
+                error!("{e:?}");
+                ptr::null_mut()
+            }
         }
     }
 
