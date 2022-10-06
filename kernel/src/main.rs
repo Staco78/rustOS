@@ -22,8 +22,9 @@ use core::{
 };
 
 use acpi::AcpiParser;
+use cpu::halt;
 use devices::pl011_uart;
-use interrupts::exceptions;
+use interrupts::{exceptions, gic::GenericInterruptController, interrupts::InterruptsManager};
 use memory::PhysicalAddress;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
 
@@ -53,8 +54,7 @@ extern "C" fn main(
             config_table_len as usize,
         )
     };
-    let acpi_parser = AcpiParser::parse_tables(config_tables).unwrap();
-    unsafe { ACPI_TABLES.write(acpi_parser) };
+    unsafe { ACPI_TABLES.write(AcpiParser::parse_tables(config_tables).unwrap()) };
     let mut console_writer = unsafe {
         if let Some(table) = ACPI_TABLES
             .assume_init_read()
@@ -82,4 +82,14 @@ extern "C" fn main(
         )
     };
     memory::init(memory_map);
+
+    let mut gic = GenericInterruptController::new(unsafe {
+        ACPI_TABLES
+            .assume_init_mut()
+            .get_table(Signature::MADT)
+            .unwrap()
+    });
+    gic.init();
+
+    halt();
 }

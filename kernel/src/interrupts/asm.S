@@ -73,7 +73,7 @@ b . // don't return
 
 .global init_ints
 init_ints:
-msr DAIFSet, #0b1111
+msr DAIFClr, #0b1111 // enable all interrupts
 adr x0, vector_table
 msr VBAR_EL1, x0
 ret

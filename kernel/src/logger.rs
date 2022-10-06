@@ -7,6 +7,7 @@ pub struct KernelLogger {}
 static LOGGER: KernelLogger = KernelLogger {};
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
+// const TARGET_BLACKLIST_TRACE: &[&str] = &[];
 const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap"];
 
 impl log::Log for KernelLogger {

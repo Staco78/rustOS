@@ -27,8 +27,8 @@ pub struct PhysicalMemoryManager {
 
 impl PhysicalMemoryManager {
     pub fn new(memory_map: &[MemoryDescriptor]) -> Self {
-        let max_adddress = Self::get_max_address(memory_map);
-        let bitmap_size = max_adddress / PAGE_SIZE / 8;
+        let max_address = Self::get_max_address(memory_map);
+        let bitmap_size = max_address / PAGE_SIZE / 8;
         let bitmap_page_count = bitmap_size / PAGE_SIZE + (bitmap_size % PAGE_SIZE != 0) as usize;
         let bitmap_ptr = Self::get_free_space(memory_map, bitmap_page_count)
             .expect("Cannot find free space for pmm bitmap");
@@ -68,7 +68,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    // find free space in memory map (used for find where to put the bitmap)
+    // find free space in memory map (used to find where to put the bitmap)
     fn get_free_space(memory_map: &[MemoryDescriptor], page_count: usize) -> Option<usize> {
         for desc in memory_map {
             if Self::is_memory_type_usable(desc.ty) && desc.page_count as usize >= page_count {

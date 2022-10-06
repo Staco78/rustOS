@@ -48,14 +48,6 @@ fn get_kernel_addr_space() -> &'static mut VirtualAddressSpace {
     unsafe { KERNEL_ADDR_SPACE.as_mut().unwrap() }
 }
 
-#[allow(unused)]
-#[derive(PartialEq, Eq)]
-pub enum MapSize {
-    Size4KB,
-    Size2MB,
-    Size1GB,
-}
-
 pub struct VirtualMemoryManager<'a> {
     physical: &'a dyn PageAllocator,
     mmu: Mmu<'a>,
@@ -74,6 +66,7 @@ impl<'a> VirtualMemoryManager<'a> {
         &self,
         from: VirtualAddress,
         to: PhysicalAddress,
+        options: MapOptions,
         addr_space: Option<&mut VirtualAddressSpace>,
     ) -> Result<VirtualAddress, MapError> {
         trace!(target: "vmm", "Map {:p} to {:p}", from as *const u8, to as *const u8);
@@ -96,13 +89,14 @@ impl<'a> VirtualMemoryManager<'a> {
                 }
             }
         };
-        self.mmu.map(from, to, MapSize::Size4KB, addr_space)
+        self.mmu.map(from, to, options, addr_space)
     }
 
     // unmap virtual address "addr" and return the physical address where it was mapped
     pub fn unmap_page(
         &self,
         addr: VirtualAddress,
+        size: MapSize,
         addr_space: Option<&mut VirtualAddressSpace>,
     ) -> Result<PhysicalAddress, UnmapError> {
         trace!(target: "vmm", "Unmap {:p}", addr as *const u8);
@@ -126,7 +120,7 @@ impl<'a> VirtualMemoryManager<'a> {
             }
         };
 
-        self.mmu.unmap(addr, MapSize::Size4KB, addr_space)
+        self.mmu.unmap(addr, size, addr_space)
     }
 
     fn find_free_pages(
@@ -177,6 +171,7 @@ impl<'a> VirtualMemoryManager<'a> {
             self.map_page(
                 virtual_addr + i * PAGE_SIZE,
                 physical_addr,
+                MapOptions::default_4k(),
                 addr_space.as_mut().map_or(None, |a| Some(a)),
             )?;
         }
@@ -194,6 +189,7 @@ impl<'a> VirtualMemoryManager<'a> {
         for i in 0..count {
             let phys_addr = self.unmap_page(
                 addr + i * PAGE_SIZE,
+                MapSize::Size4KB,
                 addr_space.as_mut().map_or(None, |a| Some(a)),
             )?;
             unsafe { self.physical.dealloc(phys_addr, 1) };
@@ -258,6 +254,100 @@ impl Display for VirtualAddressSpace {
     }
 }
 
+#[allow(unused)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapSize {
+    Size4KB,
+    Size2MB,
+    Size1GB,
+}
+
+// bit[7]: remap (force remap and doesn't return AlreadyMapped)
+// bits[6:4]: AttrIndx
+// bits[3:2]: shareability
+// bit[1]: EL0_access
+// bit[0]: RO
+#[derive(Debug, Clone, Copy)]
+pub struct MapFlags(u8);
+
+impl MapFlags {
+    #[inline]
+    pub fn new(
+        read_only: bool,
+        el0_access: bool,
+        shareability: u8,
+        attr_indx: u8,
+        remap: bool,
+    ) -> Self {
+        assert!(shareability & 0b11 == shareability);
+        assert!(attr_indx & 0b111 == attr_indx);
+        Self(
+            read_only as u8
+                | (el0_access as u8) << 1
+                | shareability << 2
+                | attr_indx << 4
+                | (remap as u8) << 7,
+        )
+    }
+
+    #[inline]
+    fn remap(self) -> bool {
+        self.0 & 0b10000000 != 0
+    }
+
+    #[inline]
+    pub fn attr_index(self) -> u8 {
+        (self.0 & 0b01110000) >> 5
+    }
+
+    #[inline]
+    pub fn shareability(self) -> u8 {
+        (self.0 & 0b00001100) >> 2
+    }
+
+    #[inline]
+    pub fn el0_access(self) -> bool {
+        self.0 & 0b00000010 != 0
+    }
+
+    #[inline]
+    pub fn read_only(self) -> bool {
+        self.0 & 0b00000001 != 0
+    }
+}
+
+impl Default for MapFlags {
+    fn default() -> Self {
+        Self(0b00011100) // remap: 0 AttrIndx: 1 shareability: 11 L0_access: 0 RO: 0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MapOptions {
+    pub size: MapSize,
+    pub flags: MapFlags,
+}
+
+impl MapOptions {
+    #[inline]
+    pub fn new(size: MapSize, flags: MapFlags) -> Self {
+        Self { size, flags }
+    }
+    
+    #[inline]
+    pub fn default_4k() -> Self {
+        Self {
+            size: MapSize::Size4KB,
+            flags: Default::default(),
+        }
+    }
+
+    #[inline]
+    pub fn force_remap(self) -> bool {
+        self.flags.remap()
+    }
+}
+
 #[derive(Debug)]
 pub enum MemoryUsage {
     KernelHeap,
@@ -271,7 +361,7 @@ pub enum MapError {
     InvalidAddrSpace,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UnmapError {
     NotMapped,
     ParentMappedToBlock,
@@ -298,7 +388,7 @@ impl From<MapError> for AllocError {
             MapError::PageAllocFailed => AllocError::OutOfMemory,
             MapError::AlreadyMapped => unreachable!(),
             MapError::InvalidVirtualAddr => unreachable!(),
-            MapError::InvalidAddrSpace => unimplemented!()
+            MapError::InvalidAddrSpace => unimplemented!(),
         }
     }
 }

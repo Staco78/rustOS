@@ -1,10 +1,11 @@
+pub mod madt;
 mod rsdp;
 pub mod sdt;
 pub mod spcr;
 
 use crate::{acpi::sdt::Signature, memory::vmm::phys_to_virt};
 
-use core::{ffi::c_void, mem::MaybeUninit};
+use core::{ffi::c_void, mem::MaybeUninit, slice};
 
 use static_assertions::assert_eq_size;
 use uefi::table::cfg::{ConfigTableEntry, ACPI2_GUID, ACPI_GUID};
@@ -64,10 +65,14 @@ impl AcpiParser {
         }
     }
 
-    pub fn get_table<T>(&mut self, signature: Signature) -> Option<*const T> {
+    pub unsafe fn get_table<T>(&mut self, signature: Signature) -> Option<&T> {
         for table in self.get_iter() {
             if unsafe { (*table).signature == signature } {
-                return Some(table as *const T);
+                let r = (table as *const T).as_ref()?;
+                let bytes = unsafe { slice::from_raw_parts(table as usize as *const u8, (*table).length as usize) };
+                let sum = bytes.iter().fold(0u8, |sum, &byte| sum.wrapping_add(byte));
+                assert!(sum == 0);
+                return Some(r);
             }
         }
         None

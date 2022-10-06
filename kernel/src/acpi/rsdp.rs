@@ -128,7 +128,7 @@ impl Iterator for XsdtEntriesIterator {
         if self.index >= self.length {
             return None;
         }
-        let ptr = unsafe { self.entries.add(self.index).read_unaligned() };
+        let ptr = unsafe { self.entries.add(self.index).read() };
         self.index += 1;
         Some(phys_to_virt(ptr as usize) as Self::Item)
     }
