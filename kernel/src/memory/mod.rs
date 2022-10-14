@@ -1,6 +1,8 @@
 use core::mem::MaybeUninit;
 
-use crate::{memory::mmu::invalidate_tlb_all, write_cpu_reg};
+use crate::memory::mmu::invalidate_tlb_all;
+use cortex_a::registers::TTBR0_EL1;
+use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
 
 mod constants;
@@ -32,7 +34,7 @@ pub fn init(memory_map: &'static [MemoryDescriptor]) {
 
         ALLOCATOR.init(vmm());
 
-        write_cpu_reg!("TTBR0_EL1", 0); // clear TTBR0
+        TTBR0_EL1.set(0); // clear
         invalidate_tlb_all();
     }
 }

@@ -1,17 +1,15 @@
 use super::{
     constants::ENTRIES_IN_TABLE, mmu::Mmu, PageAllocator, PhysicalAddress, VirtualAddress,
 };
-use crate::{
-    memory::{
-        constants::{
-            KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
-            PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_VIRT_SPACE_END,
-        },
-        mmu::TableEntry,
+use crate::memory::{
+    constants::{
+        KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
+        PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_VIRT_SPACE_END,
     },
-    read_cpu_reg,
+    mmu::TableEntry,
 };
 use core::{fmt::Display, ptr, slice};
+use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
 static mut KERNEL_ADDR_SPACE: Option<VirtualAddressSpace> = None;
@@ -19,7 +17,7 @@ pub static mut VIRTUAL_MANAGER: Option<VirtualMemoryManager> = None;
 
 pub fn init(pmm: &'static dyn PageAllocator) {
     unsafe {
-        let ttbr1 = read_cpu_reg!("TTBR1_EL1");
+        let ttbr1 = TTBR1_EL1.get_baddr();
         assert!(ttbr1 != 0);
 
         KERNEL_ADDR_SPACE = Some(VirtualAddressSpace::new(ttbr1 as *mut TableEntry, false));
@@ -333,7 +331,7 @@ impl MapOptions {
     pub fn new(size: MapSize, flags: MapFlags) -> Self {
         Self { size, flags }
     }
-    
+
     #[inline]
     pub fn default_4k() -> Self {
         Self {

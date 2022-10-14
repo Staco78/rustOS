@@ -1,9 +1,11 @@
+use tock_registers::interfaces::ReadWriteable;
+
 use crate::memory::{
     vmm::{phys_to_virt, vmm, MapFlags, MapOptions, MapSize},
     VirtualAddress,
 };
 
-use super::regs::GICC;
+use super::regs::{CpuInterfaceRegs, GICC_CTLR, GICC_PMR};
 
 pub struct CpuInterface {
     base: VirtualAddress,
@@ -15,18 +17,11 @@ impl CpuInterface {
         Self { base }
     }
 
-    fn read_reg(&self, reg: GICC) -> u32 {
-        let infos = reg.infos();
-        assert!(infos.readable);
-        let ptr = (phys_to_virt(self.base) + infos.offset) as *const u32;
-        unsafe { ptr.read_volatile() }
-    }
-
-    fn write_reg(&mut self, reg: GICC, value: u32) {
-        let infos = reg.infos();
-        assert!(infos.writable);
-        let ptr = (phys_to_virt(self.base) + infos.offset) as *mut u32;
-        unsafe { ptr.write_volatile(value) }
+    #[inline]
+    fn regs(&self) -> &CpuInterfaceRegs {
+        unsafe {
+            &*(phys_to_virt(self.base) as *const CpuInterfaceRegs)
+        }
     }
 
     pub fn init(&mut self) {
@@ -40,7 +35,8 @@ impl CpuInterface {
                 )
                 .unwrap();
         }
-        self.write_reg(GICC::CTLR, 1); // enable
-        self.write_reg(GICC::PMR, 0xFF); // accept all priorities
+
+        self.regs().ctlr.modify(GICC_CTLR::EnableGrp0::SET); // enable
+        self.regs().pmr.modify(GICC_PMR::Priority.val(0xFF)); // accept all priorities
     }
 }

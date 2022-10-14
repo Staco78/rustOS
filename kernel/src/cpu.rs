@@ -1,6 +1,8 @@
 use core::fmt::Display;
 
+use cortex_a::{asm::wfi, registers::DAIF};
 use log::error;
+use tock_registers::interfaces::Writeable;
 
 #[panic_handler]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
@@ -28,9 +30,8 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
 pub fn halt() -> ! {
     loop {
-        unsafe {
-            core::arch::asm!("wfi", options(nomem, nostack));
-        }
+        DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
+        wfi();
     }
 }
 
@@ -90,24 +91,4 @@ impl Display for InterruptFrame {
         write!(f, "esr: {:#018X?}    ", self.esr)?;
         write!(f, "far: {:#018X?}", self.far)
     }
-}
-
-#[macro_export]
-macro_rules! read_cpu_reg {
-    ($r:expr) => {
-        {
-            let mut o: u64;
-            core::arch::asm!(concat!("mrs {}, ", $r), out(reg) o);
-            o
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! write_cpu_reg {
-    ($r:expr, $v:expr) => {
-        {
-            core::arch::asm!(concat!("msr ", $r, ", {}"), in(reg) $v as u64);
-        }
-    };
 }

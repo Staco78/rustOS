@@ -1,6 +1,8 @@
 use core::{arch::global_asm, fmt::Display};
 
+use cortex_a::registers::{DAIF, VBAR_EL1};
 use log::{debug, info};
+use tock_registers::interfaces::Writeable;
 
 use crate::cpu::InterruptFrame;
 
@@ -114,13 +116,16 @@ impl Display for CpuException {
 global_asm!(include_str!("asm.S"));
 
 extern "C" {
-    fn init_ints();
+    fn vector_table();
 }
 
 pub fn init() {
-    unsafe {
-        init_ints();
-    }
+    // enable all interrupts
+    DAIF.write(DAIF::D::Unmasked + DAIF::A::Unmasked + DAIF::I::Unmasked + DAIF::F::Unmasked);
+
+    // set vector table
+    VBAR_EL1.set((vector_table as *const u8).addr() as u64);
+
     info!("Exceptions initialized");
 }
 

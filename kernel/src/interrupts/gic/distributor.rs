@@ -1,9 +1,9 @@
+use super::regs::{DistributorRegs, GICD_CTLR};
 use crate::memory::{
     vmm::{phys_to_virt, vmm, MapFlags, MapOptions, MapSize},
     PhysicalAddress,
 };
-
-use super::regs::GICD;
+use tock_registers::interfaces::Writeable;
 
 pub struct Distributor {
     base: PhysicalAddress,
@@ -15,18 +15,9 @@ impl Distributor {
         Self { base }
     }
 
-    fn read_reg(&self, reg: GICD) -> u32 {
-        let infos = reg.infos();
-        assert!(infos.readable);
-        let ptr = (phys_to_virt(self.base) + infos.offset) as *const u32;
-        unsafe { ptr.read_volatile() }
-    }
-
-    fn write_reg(&mut self, reg: GICD, value: u32) {
-        let infos = reg.infos();
-        assert!(infos.writable);
-        let ptr = (phys_to_virt(self.base) + infos.offset) as *mut u32;
-        unsafe { ptr.write_volatile(value) }
+    #[inline]
+    fn regs(&self) -> &DistributorRegs {
+        unsafe { &*(phys_to_virt(self.base) as *const DistributorRegs) }
     }
 
     pub fn init(&mut self) {
@@ -41,16 +32,16 @@ impl Distributor {
                 .unwrap();
         }
 
-        self.write_reg(GICD::CTLR, 1); // enable
+        self.regs().ctlr.write(GICD_CTLR::EnableGrp0::SET);
     }
 
     pub fn enable_interrupt(&mut self, interrupt: u32) {
         let n = interrupt / 32;
-        self.write_reg(GICD::ISENABLER(n as u8), 1 << (interrupt % 32));
+        self.regs().isenabler[n as usize].set(1 << (interrupt % 32));
     }
 
     pub fn disable_interrupt(&mut self, interrupt: u32) {
         let n = interrupt / 32;
-        self.write_reg(GICD::ICENABLER(n as u8), 1 << (interrupt % 32));
+        self.regs().icenabler[n as usize].set(1 << (interrupt % 32));
     }
 }

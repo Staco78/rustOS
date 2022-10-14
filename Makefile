@@ -4,7 +4,6 @@ QEMU_VARS=QEMU_VARS.fd
 
 CARGO_FLAGS=
 
-
 RELEASE ?= 0
 ifeq ($(RELEASE), 1)
     CARGO_FLAGS += -r
@@ -23,16 +22,12 @@ QEMU_FLAGS=-machine virt -cpu max \
 KERNEL_SRCS=$(shell find ./kernel/src/)
 LOADER_SRCS=$(shell find ./loader/src/)
 
-
 run: build
 	$(QEMU) $(QEMU_FLAGS)
 
-build: $(ROOT_PATH)/kernel $(ROOT_PATH)/boot.efi
-
-$(ROOT_PATH)/kernel: $(KERNEL_SRCS) kernel/Cargo.toml
+.PHONY: build
+build: $(KERNEL_SRCS) kernel/Cargo.toml $(LOADER_SRCS) loader/Cargo.toml
 	RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS)
-
-$(ROOT_PATH)/boot.efi: $(LOADER_SRCS) loader/Cargo.toml
 	cd loader && cargo build $(CARGO_FLAGS) && cd ..
 
 clean:

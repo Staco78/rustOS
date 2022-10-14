@@ -27,6 +27,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cortex-a"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cd4524931a4e0ec50ae91f0d55f571f31ffe11dd9ce2f9905b8343c018c25bb"
+dependencies = [
+ "tock-registers",
+]
+
+[[package]]
 name = "devices"
 version = "0.1.0"
 
@@ -34,8 +43,8 @@ version = "0.1.0"
 name = "kernel"
 version = "0.1.0"
 dependencies = [
- "bitflags",
  "cfg-if",
+ "cortex-a",
  "devices",
  "log",
  "modular-bitfield",
@@ -43,6 +52,7 @@ dependencies = [
  "num-traits",
  "spin",
  "static_assertions",
+ "tock-registers",
  "uefi",
 ]
 
@@ -153,6 +163,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tock-registers"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
 
 [[package]]
 name = "ucs2"
