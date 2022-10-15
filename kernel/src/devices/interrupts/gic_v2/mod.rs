@@ -2,11 +2,10 @@ mod cpu_interface;
 mod distributor;
 mod regs;
 
-use crate::acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD};
+use crate::{acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD}, interrupts::interrupts::InterruptsManager};
 
 use self::{cpu_interface::CpuInterface, distributor::Distributor};
 
-use super::interrupts::InterruptsManager;
 
 pub struct GenericInterruptController {
     cpu_interface: CpuInterface,

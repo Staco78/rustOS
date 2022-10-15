@@ -8,6 +8,7 @@
 
 mod acpi;
 mod cpu;
+mod devices;
 mod interrupts;
 mod logger;
 mod memory;
@@ -23,8 +24,8 @@ use core::{
 
 use acpi::AcpiParser;
 use cpu::halt;
-use devices::pl011_uart;
-use interrupts::{exceptions, gic::GenericInterruptController, interrupts::InterruptsManager};
+use devices::{pl011_uart, gic_v2::GenericInterruptController};
+use interrupts::{exceptions, interrupts::InterruptsManager};
 use memory::PhysicalAddress;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
 

@@ -36,16 +36,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "devices"
-version = "0.1.0"
-
-[[package]]
 name = "kernel"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
  "cortex-a",
- "devices",
  "log",
  "modular-bitfield",
  "num-derive",

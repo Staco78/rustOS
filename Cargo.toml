@@ -1,5 +1,5 @@
 [workspace]
-members = ["kernel", "kernel/devices"]
+members = ["kernel"]
 exclude = ["loader"]
 
 [profile.release]

@@ -6,8 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-devices = { path = "./devices" }
-
 log = { version = "0.4", features=["release_max_level_trace"] }
 uefi = { version = "0.16.0", features = [] }
 static_assertions = "1.1.0"
