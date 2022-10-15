@@ -25,6 +25,9 @@ LOADER_SRCS=$(shell find ./loader/src/)
 run: build
 	$(QEMU) $(QEMU_FLAGS)
 
+debug: build
+	$(QEMU) $(QEMU_FLAGS) -s -S
+
 .PHONY: build
 build: $(KERNEL_SRCS) kernel/Cargo.toml $(LOADER_SRCS) loader/Cargo.toml
 	RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS)

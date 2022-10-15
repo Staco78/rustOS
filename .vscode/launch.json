@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+        "preLaunchTask": "qemu",
+        "name": "debug kernel",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/root/debug/kernel",
+        "miDebuggerServerAddress": "localhost:1234",
+        "cwd": "${workspaceFolder}",
+        "miDebuggerPath": "/usr/bin/aarch64-linux-gnu-gdb",
+        "args": [],
+        "MIMode": "gdb",
+        "targetArchitecture": "arm64",
+        "stopAtEntry": false,
+
+        "customLaunchSetupCommands": [
+            {
+                "text": "file \"${workspaceFolder}/root/debug/kernel\""
+            },
+            {
+                "text": "target remote :1234",
+                "ignoreFailures": true
+            },
+        ],
+        "setupCommands": [
+            {
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+            },
+            {
+                "text": "-gdb-set disassembly-flavor intel",
+                "ignoreFailures": true
+            }
+        ]
+    }
+  ]
+}
