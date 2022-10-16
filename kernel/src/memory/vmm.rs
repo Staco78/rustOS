@@ -1,19 +1,20 @@
 use super::{
     constants::ENTRIES_IN_TABLE, mmu::Mmu, PageAllocator, PhysicalAddress, VirtualAddress,
 };
-use crate::memory::{
+use crate::{memory::{
     constants::{
         KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
         PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_VIRT_SPACE_END,
     },
     mmu::TableEntry,
-};
-use core::{fmt::Display, ptr, slice};
+}, utils::sync_once_cell::SyncOnceCell};
+use core::{fmt::{Display, Debug}, ptr, slice};
 use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
 static mut KERNEL_ADDR_SPACE: Option<VirtualAddressSpace> = None;
-pub static mut VIRTUAL_MANAGER: Option<VirtualMemoryManager> = None;
+// pub static mut VIRTUAL_MANAGER: Option<VirtualMemoryManager> = None;
+pub static VIRTUAL_MANAGER: SyncOnceCell<VirtualMemoryManager> = SyncOnceCell::new();
 
 pub fn init(pmm: &'static dyn PageAllocator) {
     unsafe {
@@ -22,7 +23,7 @@ pub fn init(pmm: &'static dyn PageAllocator) {
 
         KERNEL_ADDR_SPACE = Some(VirtualAddressSpace::new(ttbr1 as *mut TableEntry, false));
 
-        VIRTUAL_MANAGER = Some(VirtualMemoryManager::new(pmm))
+        VIRTUAL_MANAGER.set(VirtualMemoryManager::new(pmm)).expect("vmm::init called more than once");
     };
 }
 
@@ -34,11 +35,9 @@ pub const fn phys_to_virt(addr: PhysicalAddress) -> VirtualAddress {
     addr
 }
 
-// safety: safe to call after init()
 #[inline]
-#[allow(unused)]
-pub unsafe fn vmm() -> &'static VirtualMemoryManager<'static> {
-    VIRTUAL_MANAGER.as_mut().unwrap()
+pub fn vmm() -> &'static VirtualMemoryManager<'static> {
+    VIRTUAL_MANAGER.get().expect("VIRTUAL_MANAGER not initialized")
 }
 
 #[inline]
@@ -207,6 +206,12 @@ impl<'a> PageAllocator for VirtualMemoryManager<'a> {
     unsafe fn dealloc(&self, ptr: usize, count: usize) {
         assert!(ptr % PAGE_SIZE == 0);
         self.dealloc_pages(ptr, count, None).unwrap()
+    }
+}
+
+impl<'a> Debug for VirtualMemoryManager<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "VirtualMemoryManager")
     }
 }
 

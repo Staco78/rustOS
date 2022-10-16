@@ -4,7 +4,7 @@ use log::trace;
 use spin::Mutex;
 use static_assertions::assert_eq_align;
 
-use crate::utils::ByteSize;
+use crate::utils::byte_size::ByteSize;
 
 use super::{PageAllocator, constants::PAGE_SIZE};
 

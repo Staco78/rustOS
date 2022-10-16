@@ -1,24 +1,17 @@
-use crate::utils::ByteSize;
+use crate::utils::byte_size::ByteSize;
 
 use super::{
     constants::PAGE_SIZE, vmm::phys_to_virt, CustomMemoryTypes, PageAllocator, PhysicalAddress,
 };
-use core::{ptr, slice};
+use core::{fmt::Debug, ptr, slice};
 use log::{error, trace};
-use spin::{Mutex, MutexGuard};
+use spin::Mutex;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub static mut PHYSICAL_MANAGER: Option<Mutex<PhysicalMemoryManager>> = None;
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
     unsafe { PHYSICAL_MANAGER = Some(Mutex::new(PhysicalMemoryManager::new(memory_map))) };
-}
-
-// safety: safe to call after init()
-#[inline]
-#[allow(unused)]
-pub unsafe fn physical() -> MutexGuard<'static, PhysicalMemoryManager> {
-    PHYSICAL_MANAGER.as_mut().unwrap().lock()
 }
 
 pub struct PhysicalMemoryManager {
@@ -163,8 +156,6 @@ impl PhysicalMemoryManager {
     pub fn print_bitmap(&self) {
         use log::debug;
 
-        use crate::utils::ByteSize;
-
         let len = self.bitmap.len() * 8;
         debug!(
             "Physical bitmap: {} pages {}",
@@ -252,3 +243,12 @@ impl<'a> PageAllocator for PmmPageAllocator<'a> {
         self.pmm.lock().unalloc_pages(ptr, count)
     }
 }
+
+impl<'a> Debug for PmmPageAllocator<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "PmmPageAllocator({:p})", self.pmm)
+    }
+}
+
+unsafe impl<'a> Send for PmmPageAllocator<'a> {}
+unsafe impl<'a> Sync for PmmPageAllocator<'a> {}

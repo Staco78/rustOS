@@ -1,6 +1,4 @@
-use core::mem::MaybeUninit;
-
-use crate::memory::mmu::invalidate_tlb_all;
+use crate::{memory::mmu::invalidate_tlb_all, utils::sync_once_cell::SyncOnceCell};
 use cortex_a::registers::TTBR0_EL1;
 use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
@@ -11,7 +9,6 @@ mod mmu;
 mod pmm;
 pub mod vmm;
 
-pub use pmm::physical;
 pub use vmm::{vmm, MemoryUsage};
 
 use self::pmm::PmmPageAllocator;
@@ -21,16 +18,18 @@ pub type VirtualAddress = usize;
 
 #[global_allocator]
 static mut ALLOCATOR: heap::Allocator = heap::Allocator::new();
-static mut PMM_PAGE_ALLOCATOR: MaybeUninit<PmmPageAllocator> = MaybeUninit::uninit();
+static PMM_PAGE_ALLOCATOR: SyncOnceCell<PmmPageAllocator> = SyncOnceCell::new();
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
     unsafe {
         pmm::init(memory_map);
-        PMM_PAGE_ALLOCATOR.write(PmmPageAllocator::new(
-            &pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
-        ));
+        PMM_PAGE_ALLOCATOR
+            .set(PmmPageAllocator::new(
+                &pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
+            ))
+            .unwrap();
 
-        vmm::init(PMM_PAGE_ALLOCATOR.assume_init_ref());
+        vmm::init(PMM_PAGE_ALLOCATOR.get().unwrap());
 
         ALLOCATOR.init(vmm());
 
@@ -48,7 +47,7 @@ pub enum CustomMemoryTypes {
     MemoryMap = 0x80000001,
 }
 
-pub trait PageAllocator {
+pub trait PageAllocator: Sync {
     unsafe fn alloc(&self, count: usize) -> *mut u8;
     unsafe fn dealloc(&self, ptr: usize, count: usize);
 }

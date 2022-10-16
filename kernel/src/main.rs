@@ -4,6 +4,7 @@
 #![feature(strict_provenance)]
 #![feature(pointer_byte_offsets)]
 #![feature(default_alloc_error_handler)]
+#![feature(sync_unsafe_cell)]
 #![allow(incomplete_features)]
 
 mod acpi;
