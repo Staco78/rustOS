@@ -5,7 +5,7 @@ use super::{
 };
 use core::{fmt::Debug, ptr, slice};
 use log::{error, trace};
-use spin::Mutex;
+use spin::lock_api::Mutex;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub static mut PHYSICAL_MANAGER: Option<Mutex<PhysicalMemoryManager>> = None;
@@ -80,7 +80,7 @@ impl PhysicalMemoryManager {
 
                 trace!(target: "pmm",
                     "Found usable memory at {:p} size: {}",
-                    desc.phys_start as *const u8,
+                    desc.phys_start as *const (),
                     ByteSize(desc.page_count as usize * PAGE_SIZE),
                 );
 
@@ -170,8 +170,8 @@ impl PhysicalMemoryManager {
                 debug!(
                     "{} from {:p} to {:p} ({})",
                     if used { "Used" } else { "Free" },
-                    (from * PAGE_SIZE) as *const u8,
-                    (i * PAGE_SIZE) as *const u8,
+                    (from * PAGE_SIZE) as *const (),
+                    (i * PAGE_SIZE) as *const (),
                     ByteSize((i - from) * PAGE_SIZE)
                 );
                 used = u;
@@ -203,12 +203,13 @@ impl PhysicalMemoryManager {
     pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
         let pages = self.find_pages(count)?;
         self.set_used_range(pages, count);
-        trace!(target: "pmm", "Alloc {} page(s) at {:p}", count, (pages * PAGE_SIZE) as *const u8);
+        trace!(target: "pmm", "Alloc {} page(s) at {:p}", count, (pages * PAGE_SIZE) as *const ());
         Ok(pages * PAGE_SIZE)
     }
 
     pub fn unalloc_pages(&mut self, addr: PhysicalAddress, count: usize) {
         assert!(addr % PAGE_SIZE == 0);
+        trace!(target: "pmm", "Dealloc {} page(s) at {:p}", count, addr as *const ());
         self.set_free_range(addr / PAGE_SIZE, count);
     }
 }

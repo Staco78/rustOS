@@ -2,7 +2,7 @@ mod cpu_interface;
 mod distributor;
 mod regs;
 
-use crate::{acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD}, interrupts::interrupts::InterruptsManager};
+use crate::{acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD}, interrupts::interrupts::{InterruptsChip, CoreSelection}};
 
 use self::{cpu_interface::CpuInterface, distributor::Distributor};
 
@@ -55,9 +55,34 @@ impl GenericInterruptController {
     }
 }
 
-impl InterruptsManager for GenericInterruptController {
+impl InterruptsChip for GenericInterruptController {
     fn init(&mut self) {
         self.distributor.init();
         self.cpu_interface.init();
+    }
+
+    #[inline]
+    fn enable_interrupt(&self, interrupt: u32) {
+        self.distributor.enable_interrupt(interrupt);
+    }
+
+    #[inline]
+    fn disable_interrupt(&self, interrupt: u32) {
+        self.distributor.disable_interrupt(interrupt)
+    }
+
+    #[inline]
+    fn get_current_intid(&self) -> u32 {
+        self.cpu_interface.get_current_intid()
+    }
+
+    #[inline]
+    fn end_of_interrupt(&self, interrupt: u32) {
+        self.cpu_interface.eoi(interrupt);
+    }
+
+    #[inline]
+    fn send_sgi(&self, destination: CoreSelection, interrupt_id: u8) {
+        self.distributor.send_sgi(destination, interrupt_id);
     }
 }

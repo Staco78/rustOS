@@ -1,7 +1,7 @@
 use core::{alloc::GlobalAlloc, mem::size_of, ptr};
 
 use log::trace;
-use spin::Mutex;
+use spin::lock_api::Mutex;
 use static_assertions::assert_eq_align;
 
 use crate::utils::byte_size::ByteSize;

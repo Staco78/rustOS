@@ -2,6 +2,9 @@
 members = ["kernel"]
 exclude = ["loader"]
 
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 lto = true
 debug = false

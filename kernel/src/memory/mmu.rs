@@ -1,10 +1,9 @@
+use crate::memory::KERNEL_VIRT_SPACE_START;
+
 use super::{
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
-    vmm::{
-        phys_to_virt, FindSpaceError, MapError, MapOptions, MapSize, UnmapError,
-        VirtualAddressSpace,
-    },
-    PageAllocator, PhysicalAddress, VirtualAddress,
+    vmm::{phys_to_virt, FindSpaceError, MapError, MapOptions, MapSize, UnmapError},
+    PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
 use core::{arch::asm, fmt::Debug, ptr, slice};
 use modular_bitfield::prelude::*;
@@ -584,6 +583,12 @@ impl<'a> Mmu<'a> {
             table
         };
 
+        let page_off = if addr_space.is_user {
+            0
+        } else {
+            KERNEL_VIRT_SPACE_START / PAGE_SIZE
+        };
+
         let mut found_pages = 0usize;
         let mut start_page = None;
 
@@ -612,12 +617,12 @@ impl<'a> Mmu<'a> {
                                         found_pages = 0;
                                         start_page = None;
                                     } else {
+                                        start_page.get_or_insert(
+                                            ((l0_index * 512 + l1_index) * 512 + l2_index) * 512
+                                                + l3_index
+                                                + page_off,
+                                        );
                                         found_pages += 1;
-                                        if found_pages == 0 {
-                                            debug_assert!(start_page.is_none());
-                                            start_page =
-                                                Some((l1_index * 512 + l2_index) * 512 + l3_index);
-                                        }
                                         if found_pages >= count {
                                             return Ok(start_page.unwrap() * PAGE_SIZE);
                                         }
@@ -625,11 +630,10 @@ impl<'a> Mmu<'a> {
                                 }
                             }
                         } else {
+                            start_page.get_or_insert(
+                                ((l0_index * 512 + l1_index) * 512 + l2_index) * 512 + page_off,
+                            );
                             found_pages += 512;
-                            if found_pages == 0 {
-                                debug_assert!(start_page.is_none());
-                                start_page = Some((l1_index * 512 + l2_index) * 512);
-                            }
                             if found_pages >= count {
                                 return Ok(start_page.unwrap() * PAGE_SIZE);
                             }
@@ -637,11 +641,8 @@ impl<'a> Mmu<'a> {
                     }
                 }
             } else {
+                start_page.get_or_insert((l0_index * 512 + l1_index) * 512 * 512 + page_off);
                 found_pages += 512 * 512;
-                if found_pages == 0 {
-                    debug_assert!(start_page.is_none());
-                    start_page = Some(l1_index * 512 * 512);
-                }
                 if found_pages >= count {
                     return Ok(start_page.unwrap() * PAGE_SIZE);
                 }

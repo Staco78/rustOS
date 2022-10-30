@@ -1,8 +1,8 @@
 use core::{arch::global_asm, fmt::Display};
 
-use cortex_a::registers::{DAIF, VBAR_EL1};
+use cortex_a::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
 use log::{debug, info};
-use tock_registers::interfaces::Writeable;
+use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::cpu::InterruptFrame;
 
@@ -14,9 +14,9 @@ enum CpuException {
     SvcInstruction,
     HvcInstruction,
     SmcInstruction,
-    InstructionAbort(u32),
+    InstructionAbort(u64, u32),
     PCAlignment,
-    DataAbort(u32),
+    DataAbort(u64, u32),
     StackAlignment,
     FloatingPointException,
     SError,
@@ -25,6 +25,7 @@ enum CpuException {
 impl CpuException {
     fn from_esr(esr: u32) -> CpuException {
         let ec = esr >> 26;
+        let far = FAR_EL1.get();
         match ec {
             0x00 => CpuException::Unkown(esr),
             0x11 => CpuException::SvcInstruction,
@@ -33,9 +34,9 @@ impl CpuException {
             0x15 => CpuException::SvcInstruction,
             0x16 => CpuException::HvcInstruction,
             0x17 => CpuException::SmcInstruction,
-            0x20 | 0x21 => CpuException::InstructionAbort(esr),
+            0x20 | 0x21 => CpuException::InstructionAbort(far, esr),
             0x22 => CpuException::PCAlignment,
-            0x24 | 0x25 => CpuException::DataAbort(esr),
+            0x24 | 0x25 => CpuException::DataAbort(far, esr),
             0x26 => CpuException::StackAlignment,
             0x28 | 0x2C => CpuException::FloatingPointException,
             0x2F => CpuException::SError,
@@ -52,8 +53,8 @@ impl Display for CpuException {
             CpuException::SvcInstruction => write!(f, "SVC Instruction Exception"),
             CpuException::HvcInstruction => write!(f, "HvcInstruction Exception"),
             CpuException::SmcInstruction => write!(f, "SmcInstruction Exception"),
-            CpuException::InstructionAbort(esr) => {
-                write!(f, "Instruction Abort: ")?;
+            CpuException::InstructionAbort(far, esr) => {
+                write!(f, "Instruction Abort at {:p}: ", *far as *const ())?;
                 let iss = esr & 0x1FFFFFF;
                 let ll = iss & 0b11;
                 match (iss >> 2) & 0b1111 {
@@ -71,10 +72,10 @@ impl Display for CpuException {
                 }
             }
             CpuException::PCAlignment => write!(f, "PC Alignment Exception"),
-            CpuException::DataAbort(esr) => {
+            CpuException::DataAbort(far, esr) => {
                 let iss = esr & 0x1FFFFFF;
                 let ll = iss & 0b11;
-                write!(f, "Data Abort: ")?;
+                write!(f, "Data Abort at {:p}: ", *far as *const ())?;
                 match (iss >> 2) & 0b1111 {
                     0b0000 => write!(f, "Address size fault LL={ll}"),
                     0b0001 => write!(f, "Translation fault LL={ll}"),
@@ -116,15 +117,16 @@ impl Display for CpuException {
 global_asm!(include_str!("asm.S"));
 
 extern "C" {
-    fn vector_table();
+    #[allow(improper_ctypes)]
+    static vector_table: ();
 }
 
 pub fn init() {
     // enable all interrupts
-    DAIF.write(DAIF::D::Unmasked + DAIF::A::Unmasked + DAIF::I::Unmasked + DAIF::F::Unmasked);
+    DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
 
     // set vector table
-    VBAR_EL1.set((vector_table as *const u8).addr() as u64);
+    unsafe { VBAR_EL1.set((&vector_table as *const ()).addr() as u64) };
 
     info!("Exceptions initialized");
 }
@@ -133,7 +135,7 @@ pub fn init() {
 unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
     let frame = frame.as_mut().unwrap();
     debug!("{}", frame);
-    panic!("{}", CpuException::from_esr(frame.esr as u32));
+    panic!("{}", CpuException::from_esr(ESR_EL1.get() as u32));
 }
 
 #[no_mangle]

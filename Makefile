@@ -18,7 +18,8 @@ QEMU_FLAGS=-machine virt -cpu max \
         -drive format=raw,file=fat:rw:`pwd`/$(ROOT_PATH) \
         -net none -monitor stdio -smp 4 -m 256
 
-run: build
+
+run: build loader
 	$(QEMU) $(QEMU_FLAGS)
 
 debug: build

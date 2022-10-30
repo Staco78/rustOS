@@ -5,7 +5,6 @@
 #![feature(pointer_byte_offsets)]
 #![feature(default_alloc_error_handler)]
 #![feature(sync_unsafe_cell)]
-#![allow(incomplete_features)]
 
 mod acpi;
 mod cpu;
@@ -13,6 +12,8 @@ mod devices;
 mod interrupts;
 mod logger;
 mod memory;
+mod scheduler;
+mod timer;
 mod utils;
 
 extern crate alloc;
@@ -24,10 +25,12 @@ use core::{
 };
 
 use acpi::AcpiParser;
-use cpu::halt;
-use devices::{pl011_uart, gic_v2::GenericInterruptController};
-use interrupts::{exceptions, interrupts::InterruptsManager};
+use cortex_a::registers::CurrentEL;
+use devices::pl011_uart;
+use interrupts::exceptions;
 use memory::PhysicalAddress;
+use scheduler::SCHEDULER;
+use tock_registers::interfaces::Readable;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
 
 use crate::{
@@ -36,6 +39,7 @@ use crate::{
         spcr::{self, Spcr},
     },
     memory::vmm::{self, phys_to_virt},
+    scheduler::exit,
 };
 
 pub static mut ACPI_TABLES: MaybeUninit<AcpiParser> = MaybeUninit::uninit();
@@ -46,8 +50,14 @@ extern "C" fn main(
     config_table_len: u32,
     memory_map_ptr: PhysicalAddress,
     memory_map_len: u32,
-) {
+) -> ! {
     logger::init();
+    assert!(
+        CurrentEL
+            .read_as_enum::<CurrentEL::EL::Value>(CurrentEL::EL)
+            .unwrap()
+            == CurrentEL::EL::Value::EL1
+    );
     exceptions::init();
 
     let config_tables = unsafe {
@@ -84,14 +94,18 @@ extern "C" fn main(
         )
     };
     memory::init(memory_map);
-
-    let mut gic = GenericInterruptController::new(unsafe {
+    SCHEDULER.init();
+    interrupts::init_chip(unsafe {
         ACPI_TABLES
             .assume_init_mut()
             .get_table(Signature::MADT)
             .unwrap()
     });
-    gic.init();
 
-    halt();
+    SCHEDULER.register_cpu(0, true);
+    SCHEDULER.start(0, later_main);
+}
+
+fn later_main() -> ! {
+    exit(0);
 }

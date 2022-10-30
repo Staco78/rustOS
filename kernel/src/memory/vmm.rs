@@ -1,19 +1,24 @@
 use super::{
-    constants::ENTRIES_IN_TABLE, mmu::Mmu, PageAllocator, PhysicalAddress, VirtualAddress,
+    addr_space::VirtualAddressSpace, mmu::Mmu, AddrSpaceLock, AddrSpaceSelector, PageAllocator,
+    PhysicalAddress, VirtualAddress,
 };
-use crate::{memory::{
-    constants::{
-        KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
-        PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_VIRT_SPACE_END,
+use crate::{
+    memory::{
+        constants::{
+            KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
+            PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_SPACE_END,
+            USER_SPACE_START, USER_VIRT_SPACE_END,
+        },
+        mmu::TableEntry,
     },
-    mmu::TableEntry,
-}, utils::sync_once_cell::SyncOnceCell};
-use core::{fmt::{Display, Debug}, ptr, slice};
+    scheduler::SCHEDULER,
+    utils::sync_once_cell::SyncOnceCell,
+};
+use core::{fmt::Debug, ptr};
 use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
-static mut KERNEL_ADDR_SPACE: Option<VirtualAddressSpace> = None;
-// pub static mut VIRTUAL_MANAGER: Option<VirtualMemoryManager> = None;
+static mut DEFAULT_KERNEL_ADDR_SPACE: Option<AddrSpaceLock> = None;
 pub static VIRTUAL_MANAGER: SyncOnceCell<VirtualMemoryManager> = SyncOnceCell::new();
 
 pub fn init(pmm: &'static dyn PageAllocator) {
@@ -21,10 +26,21 @@ pub fn init(pmm: &'static dyn PageAllocator) {
         let ttbr1 = TTBR1_EL1.get_baddr();
         assert!(ttbr1 != 0);
 
-        KERNEL_ADDR_SPACE = Some(VirtualAddressSpace::new(ttbr1 as *mut TableEntry, false));
+        DEFAULT_KERNEL_ADDR_SPACE = Some(AddrSpaceLock::new(VirtualAddressSpace::new(
+            ttbr1 as *mut TableEntry,
+            false,
+        )));
 
-        VIRTUAL_MANAGER.set(VirtualMemoryManager::new(pmm)).expect("vmm::init called more than once");
+        VIRTUAL_MANAGER
+            .set(VirtualMemoryManager::new(pmm))
+            .expect("vmm::init called more than once");
     };
+}
+
+pub fn create_current_kernel_addr_space() -> AddrSpaceLock {
+    let ttbr1 = TTBR1_EL1.get_baddr();
+    assert!(ttbr1 != 0);
+    unsafe { AddrSpaceLock::new(VirtualAddressSpace::new(ttbr1 as *mut TableEntry, false)) }
 }
 
 #[inline]
@@ -37,12 +53,17 @@ pub const fn phys_to_virt(addr: PhysicalAddress) -> VirtualAddress {
 
 #[inline]
 pub fn vmm() -> &'static VirtualMemoryManager<'static> {
-    VIRTUAL_MANAGER.get().expect("VIRTUAL_MANAGER not initialized")
+    VIRTUAL_MANAGER
+        .get()
+        .expect("VIRTUAL_MANAGER not initialized")
 }
 
 #[inline]
-fn get_kernel_addr_space() -> &'static mut VirtualAddressSpace {
-    unsafe { KERNEL_ADDR_SPACE.as_mut().unwrap() }
+pub(super) fn get_kernel_addr_space<'a>() -> &'a AddrSpaceLock {
+    SCHEDULER.try_get_kernel_process().map_or_else(
+        || unsafe { DEFAULT_KERNEL_ADDR_SPACE.as_ref().expect("Vmm not inited") },
+        |p| p.get_addr_space(),
+    )
 }
 
 pub struct VirtualMemoryManager<'a> {
@@ -64,29 +85,21 @@ impl<'a> VirtualMemoryManager<'a> {
         from: VirtualAddress,
         to: PhysicalAddress,
         options: MapOptions,
-        addr_space: Option<&mut VirtualAddressSpace>,
+        addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, MapError> {
-        trace!(target: "vmm", "Map {:p} to {:p}", from as *const u8, to as *const u8);
+        trace!(target: "vmm", "Map {:p} to {:p}", from as *const (), to as *const ());
         if from >= USER_VIRT_SPACE_END && from < KERNEL_VIRT_SPACE_START {
             return Err(MapError::InvalidVirtualAddr);
         }
-        let addr_space = match addr_space {
-            Some(addr_space) => {
-                let is_user = from < USER_VIRT_SPACE_END;
-                if addr_space.is_user != is_user {
-                    return Err(MapError::InvalidAddrSpace);
-                }
-                addr_space
+
+        let mut addr_space = addr_space.lock();
+        {
+            let is_user = from < USER_VIRT_SPACE_END;
+            if addr_space.is_user != is_user {
+                return Err(MapError::InvalidAddrSpace);
             }
-            None => {
-                if from < KERNEL_VIRT_SPACE_START {
-                    return Err(MapError::InvalidVirtualAddr);
-                } else {
-                    get_kernel_addr_space()
-                }
-            }
-        };
-        self.mmu.map(from, to, options, addr_space)
+        }
+        self.mmu.map(from, to, options, &mut addr_space)
     }
 
     // unmap virtual address "addr" and return the physical address where it was mapped
@@ -94,70 +107,59 @@ impl<'a> VirtualMemoryManager<'a> {
         &self,
         addr: VirtualAddress,
         size: MapSize,
-        addr_space: Option<&mut VirtualAddressSpace>,
+        addr_space: AddrSpaceSelector,
     ) -> Result<PhysicalAddress, UnmapError> {
-        trace!(target: "vmm", "Unmap {:p}", addr as *const u8);
+        trace!(target: "vmm", "Unmap {:p}", addr as *const ());
         if addr >= USER_VIRT_SPACE_END && addr < KERNEL_VIRT_SPACE_START {
             return Err(UnmapError::InvalidVirtualAddr);
         }
-        let addr_space = match addr_space {
-            Some(addr_space) => {
-                let is_user = addr < USER_VIRT_SPACE_END;
-                if addr_space.is_user != is_user {
-                    return Err(UnmapError::InvalidAddrSpace);
-                }
-                addr_space
-            }
-            None => {
-                if addr < KERNEL_VIRT_SPACE_START {
-                    return Err(UnmapError::InvalidVirtualAddr);
-                } else {
-                    get_kernel_addr_space()
-                }
-            }
-        };
 
-        self.mmu.unmap(addr, size, addr_space)
+        let mut addr_space = addr_space.lock();
+        {
+            let is_user = addr < USER_VIRT_SPACE_END;
+            if addr_space.is_user != is_user {
+                return Err(UnmapError::InvalidAddrSpace);
+            }
+        }
+        self.mmu.unmap(addr, size, &mut addr_space)
     }
 
     fn find_free_pages(
         &self,
         count: usize,
         usage: MemoryUsage,
-        addr_space: Option<&VirtualAddressSpace>,
+        addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, FindSpaceError> {
         trace!(target: "vmm", "Search {count} pages of {:?} virtual space", usage);
         let is_user_addr_space = match usage {
             MemoryUsage::KernelHeap => false,
+            MemoryUsage::UserData => true,
         };
-        let addr_space = if let Some(addr_space) = addr_space {
-            if addr_space.is_user != is_user_addr_space {
-                return Err(FindSpaceError::InvalidAddrSpace);
-            }
-            addr_space
-        } else if is_user_addr_space {
+
+        let addr_space = addr_space.lock();
+        if addr_space.is_user != is_user_addr_space {
             return Err(FindSpaceError::InvalidAddrSpace);
-        } else {
-            get_kernel_addr_space()
-        };
+        }
 
         let (min_address, max_address) = match usage {
             MemoryUsage::KernelHeap => (KERNEL_HEAP_START, KERNEL_HEAP_END),
+            MemoryUsage::UserData => (USER_SPACE_START, USER_SPACE_END),
         };
 
         self.mmu
-            .find_free_pages(count, min_address, max_address, addr_space)
+            .find_free_pages(count, min_address, max_address, &addr_space)
     }
 
     pub fn alloc_pages(
         &self,
         count: usize,
         usage: MemoryUsage,
-        mut addr_space: Option<&mut VirtualAddressSpace>,
+        addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, AllocError> {
         trace!(target: "vmm", "Alloc {} pages of {:?}", count, usage);
-        let virtual_addr =
-            self.find_free_pages(count, usage, addr_space.as_ref().map_or(None, |a| Some(a)))?;
+
+        let mut lock = addr_space.lock();
+        let virtual_addr = self.find_free_pages(count, usage, AddrSpaceSelector::new(&mut lock))?;
         for i in 0..count {
             let r = unsafe { self.physical.alloc(1) };
             let physical_addr = if r.is_null() {
@@ -169,7 +171,7 @@ impl<'a> VirtualMemoryManager<'a> {
                 virtual_addr + i * PAGE_SIZE,
                 physical_addr,
                 MapOptions::default_4k(),
-                addr_space.as_mut().map_or(None, |a| Some(a)),
+                AddrSpaceSelector::new(&mut lock),
             )?;
         }
 
@@ -180,14 +182,15 @@ impl<'a> VirtualMemoryManager<'a> {
         &self,
         addr: VirtualAddress,
         count: usize,
-        mut addr_space: Option<&mut VirtualAddressSpace>,
+        addr_space: AddrSpaceSelector,
     ) -> Result<(), DeallocError> {
-        trace!(target: "vmm", "Dealloc {} pages at addr {:p}", count, addr as *const u8);
+        trace!(target: "vmm", "Dealloc {} pages at addr {:p}", count, addr as *const ());
+        let mut lock = addr_space.lock();
         for i in 0..count {
             let phys_addr = self.unmap_page(
                 addr + i * PAGE_SIZE,
                 MapSize::Size4KB,
-                addr_space.as_mut().map_or(None, |a| Some(a)),
+                AddrSpaceSelector::new(&mut lock),
             )?;
             unsafe { self.physical.dealloc(phys_addr, 1) };
         }
@@ -197,7 +200,7 @@ impl<'a> VirtualMemoryManager<'a> {
 
 impl<'a> PageAllocator for VirtualMemoryManager<'a> {
     unsafe fn alloc(&self, count: usize) -> *mut u8 {
-        match self.alloc_pages(count, MemoryUsage::KernelHeap, None) {
+        match self.alloc_pages(count, MemoryUsage::KernelHeap, AddrSpaceSelector::kernel()) {
             Ok(addr) => addr as *mut u8,
             Err(_) => ptr::null_mut(),
         }
@@ -205,55 +208,14 @@ impl<'a> PageAllocator for VirtualMemoryManager<'a> {
 
     unsafe fn dealloc(&self, ptr: usize, count: usize) {
         assert!(ptr % PAGE_SIZE == 0);
-        self.dealloc_pages(ptr, count, None).unwrap()
+        self.dealloc_pages(ptr, count, AddrSpaceSelector::kernel())
+            .unwrap()
     }
 }
 
 impl<'a> Debug for VirtualMemoryManager<'a> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "VirtualMemoryManager")
-    }
-}
-
-pub struct VirtualAddressSpace {
-    ptr: *mut TableEntry, // the value in the TTBR register
-    pub is_user: bool,    // TTBR0 or TTBR1 (before or after hole)
-}
-
-impl VirtualAddressSpace {
-    pub fn new(ptr: *mut TableEntry, user: bool) -> Self {
-        debug_assert!(ptr.addr() != 0);
-        Self { ptr, is_user: user }
-    }
-
-    #[inline]
-    pub fn get_table(&self) -> &[TableEntry] {
-        unsafe {
-            slice::from_raw_parts(
-                phys_to_virt(self.ptr as usize) as *const TableEntry,
-                ENTRIES_IN_TABLE,
-            )
-        }
-    }
-
-    #[inline]
-    pub fn get_table_mut(&mut self) -> &mut [TableEntry] {
-        unsafe {
-            slice::from_raw_parts_mut(
-                phys_to_virt(self.ptr as usize) as *mut TableEntry,
-                ENTRIES_IN_TABLE,
-            )
-        }
-    }
-}
-
-impl Display for VirtualAddressSpace {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(
-            f,
-            "VirtualAddressSpace {{ ptr: {:p}, is_user: {} }}",
-            self.ptr, self.is_user
-        )
     }
 }
 
@@ -354,6 +316,7 @@ impl MapOptions {
 #[derive(Debug)]
 pub enum MemoryUsage {
     KernelHeap,
+    UserData,
 }
 
 #[derive(Debug)]

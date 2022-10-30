@@ -2,6 +2,7 @@ use core::fmt::Display;
 
 use cortex_a::{asm::wfi, registers::DAIF};
 use log::error;
+use static_assertions::assert_eq_size;
 use tock_registers::interfaces::Writeable;
 
 #[panic_handler]
@@ -57,16 +58,29 @@ pub struct InterruptFrame {
     pub x16: u64,
     pub x17: u64,
     pub x18: u64,
-    pub fp: u64,
-    pub lr: u64,
-    pub xzr: u64,
-    pub esr: u64,
-    pub far: u64,
+    pub x19: u64,
+    pub x20: u64,
+    pub x21: u64,
+    pub x22: u64,
+    pub x23: u64,
+    pub x24: u64,
+    pub x25: u64,
+    pub x26: u64,
+    pub x27: u64,
+    pub x28: u64,
+    pub x29: u64,
+    pub x30: u64, // lr
+    pub sp: u64,
+
+    pub pc: u64,
+    pub pstate: u64,
 }
+
+assert_eq_size!(InterruptFrame, [u8; 272]); // stay consistent with the value in asm code
 
 impl Display for InterruptFrame {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f, "Interrupt Frame:")?;
+        writeln!(f, "Registers:")?;
         write!(f, "x0:  {:#018X?}    ", self.x0)?;
         writeln!(f, "x1:  {:#018X?}", self.x1)?;
         write!(f, "x2:  {:#018X?}    ", self.x2)?;
@@ -86,9 +100,20 @@ impl Display for InterruptFrame {
         write!(f, "x16: {:#018X?}    ", self.x16)?;
         writeln!(f, "x17: {:#018X?}", self.x17)?;
         write!(f, "x18: {:#018X?}    ", self.x18)?;
-        writeln!(f, "fp:  {:#018X?}", self.fp)?;
-        write!(f, "lr:  {:#018X?}    ", self.lr)?;
-        write!(f, "esr: {:#018X?}    ", self.esr)?;
-        write!(f, "far: {:#018X?}", self.far)
+        writeln!(f, "x19: {:#018X?}", self.x19)?;
+        write!(f, "x20: {:#018X?}    ", self.x20)?;
+        writeln!(f, "x21: {:#018X?}", self.x21)?;
+        write!(f, "x22: {:#018X?}    ", self.x22)?;
+        writeln!(f, "x23: {:#018X?}", self.x23)?;
+        write!(f, "x24: {:#018X?}    ", self.x24)?;
+        writeln!(f, "x25: {:#018X?}", self.x25)?;
+        write!(f, "x26: {:#018X?}    ", self.x26)?;
+        writeln!(f, "x27: {:#018X?}", self.x27)?;
+        write!(f, "x28: {:#018X?}    ", self.x28)?;
+        writeln!(f, "x29: {:#018X?}", self.x29)?;
+        write!(f, "x30: {:#018X?}    ", self.x30)?;
+        writeln!(f, "sp:  {:#018X?}", self.sp)?;
+        write!(f, "pc:  {:#018X?} ", self.pc)?;
+        write!(f, "pstate: {:#018X?}", self.pstate)
     }
 }

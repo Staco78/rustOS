@@ -1,11 +1,11 @@
-use tock_registers::interfaces::ReadWriteable;
+use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 use crate::memory::{
     vmm::{phys_to_virt, vmm, MapFlags, MapOptions, MapSize},
-    VirtualAddress,
+    AddrSpaceSelector, VirtualAddress,
 };
 
-use super::regs::{CpuInterfaceRegs, GICC_CTLR, GICC_PMR};
+use super::regs::{CpuInterfaceRegs, GICC_CTLR, GICC_IAR, GICC_PMR};
 
 pub struct CpuInterface {
     base: VirtualAddress,
@@ -28,11 +28,21 @@ impl CpuInterface {
                 phys_to_virt(self.base),
                 self.base,
                 MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b11, 2, true)),
-                None,
+                AddrSpaceSelector::kernel(),
             )
             .unwrap();
 
         self.regs().ctlr.modify(GICC_CTLR::EnableGrp0::SET); // enable
         self.regs().pmr.modify(GICC_PMR::Priority.val(0xFF)); // accept all priorities
+    }
+
+    #[inline]
+    pub fn get_current_intid(&self) -> u32 {
+        self.regs().iar.read(GICC_IAR::InterruptId)
+    }
+
+    #[inline]
+    pub fn eoi(&self, interrupt: u32) {
+        self.regs().eoir.set(interrupt);
     }
 }

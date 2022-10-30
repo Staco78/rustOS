@@ -8,11 +8,11 @@ static LOGGER: KernelLogger = KernelLogger {};
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
 // const TARGET_BLACKLIST_TRACE: &[&str] = &[];
-const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap"];
+const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap", "interrupts", "scheduler"];
 
 impl log::Log for KernelLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        if TARGET_BLACKLIST_TRACE
+        if metadata.level() == Level::Trace && TARGET_BLACKLIST_TRACE
             .iter()
             .any(|s| *s == metadata.target())
         {
@@ -53,7 +53,7 @@ impl log::Log for KernelLogger {
             }
             let target = record.target();
             // dont't show automatic target
-            if !target.contains("::") {
+            if !target.contains("::") && level != Level::Info {
                 write!(output, "{}: ", target).unwrap();
             }
             writeln!(output, "{}", record.args()).unwrap();
