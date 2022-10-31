@@ -8,7 +8,7 @@ static LOGGER: KernelLogger = KernelLogger {};
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
 // const TARGET_BLACKLIST_TRACE: &[&str] = &[];
-const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap", "interrupts", "scheduler"];
+const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap", "interrupts", "scheduler", "timer"];
 
 impl log::Log for KernelLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {

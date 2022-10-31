@@ -29,7 +29,7 @@ use cortex_a::registers::CurrentEL;
 use devices::pl011_uart;
 use interrupts::exceptions;
 use memory::PhysicalAddress;
-use scheduler::SCHEDULER;
+use scheduler::{current_process, thread::Thread, SCHEDULER};
 use tock_registers::interfaces::Readable;
 use uefi::table::{boot::MemoryDescriptor, cfg::ConfigTableEntry};
 
@@ -107,5 +107,10 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
+    Thread::new(current_process(), other_thread, false).unwrap().start();
     exit(0);
+}
+
+fn other_thread() -> ! {
+    loop {}
 }

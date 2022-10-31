@@ -18,7 +18,7 @@ use crate::{
 use super::{
     consts::{KERNEL_STACK_PAGE_COUNT, USER_STACK_PAGE_COUNT},
     process::ProcessRef,
-    sync_ref::SyncRef,
+    sync_ref::SyncRef, SCHEDULER,
 };
 
 pub type ThreadId = usize;
@@ -35,9 +35,12 @@ fn get_next_id() -> ThreadId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadState {
-    Paused,
+    Runnable,
     Running,
     Exited,
+
+    // store the time in ns from uptime where we will wake up the thread
+    Waiting(u64),
 }
 
 pub struct Thread {
@@ -112,7 +115,7 @@ impl Thread {
         let thread = Self {
             process: process.clone(),
             id,
-            state: AtomicCell::new(ThreadState::Paused),
+            state: AtomicCell::new(ThreadState::Runnable),
             user_stack_base,
             kernel_stack_base,
             kernel_stack,
@@ -162,6 +165,11 @@ impl ThreadRef {
     pub fn process(&self) -> &ProcessRef {
         let ptr = self.data_ptr();
         unsafe { &(*ptr).process }
+    }
+
+    #[inline]
+    pub fn start(self) {
+        SCHEDULER.add_thread(self);
     }
 }
 

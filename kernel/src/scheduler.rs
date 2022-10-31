@@ -1,10 +1,10 @@
-use core::{arch::asm, cell::SyncUnsafeCell};
+use core::{arch::asm, cell::SyncUnsafeCell, mem::MaybeUninit};
 
 use alloc::{collections::VecDeque, vec::Vec};
 use cortex_a::{asm, registers::TPIDR_EL1};
 use crossbeam_utils::atomic::AtomicCell;
-use log::{trace, info};
-use spin::lock_api::Mutex;
+use log::{info, trace};
+use spin::lock_api::{Mutex, RwLock};
 use static_assertions::const_assert;
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -32,6 +32,8 @@ pub mod thread;
 
 pub use funcs::*;
 
+const TIMESLICE_NS: u64 = 100_000_000; // 100 ms
+
 extern "C" {
     fn exception_exit(frame: *mut InterruptFrame) -> !;
 }
@@ -52,6 +54,8 @@ pub struct Scheduler {
 
     threads_to_destroy: Mutex<Vec<ThreadRef>>,
     thread_destroyer_of_threads: SyncUnsafeCell<Option<ThreadRef>>,
+
+    waiting_threads: SyncUnsafeCell<MaybeUninit<RwLock<VecDeque<ThreadRef>>>>,
 }
 
 unsafe impl Send for Scheduler {}
@@ -66,6 +70,8 @@ impl Scheduler {
 
             threads_to_destroy: Mutex::new(Vec::new()),
             thread_destroyer_of_threads: SyncUnsafeCell::new(None),
+
+            waiting_threads: SyncUnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
@@ -86,7 +92,10 @@ impl Scheduler {
             false,
         )
         .expect("Unable to create the thread destroyer of threads");
-        unsafe { *self.thread_destroyer_of_threads.get() = Some(thread_destroyer_of_threads) };
+        unsafe {
+            *self.thread_destroyer_of_threads.get() = Some(thread_destroyer_of_threads);
+            *self.waiting_threads.get() = MaybeUninit::new(RwLock::new(VecDeque::new()));
+        }
     }
 
     #[inline]
@@ -106,6 +115,11 @@ impl Scheduler {
         unsafe { self.cpus.get().as_ref().unwrap_unchecked() }
     }
 
+    #[inline]
+    fn waiting_threads(&self) -> &RwLock<VecDeque<ThreadRef>> {
+        unsafe { (*self.waiting_threads.get()).assume_init_ref() }
+    }
+
     pub fn register_cpu(&self, id: u8, is_main_cpu: bool) {
         assert!(self.state.load() == SchedulerState::Initing);
         for cpu in self.cpus() {
@@ -119,16 +133,16 @@ impl Scheduler {
 
     pub fn start(&self, cpu_id: u8, entry: ThreadEntry) -> ! {
         assert!(self.state.load() == SchedulerState::Initing);
-        
+
         // use a scope here bc rust doesn't drop variables when calling a never return function
-        let thread = {
+        let thread_to_run = {
             let cpu = self
                 .cpus()
                 .iter()
                 .find(|c| c.id == cpu_id)
                 .expect("Cpu not registered");
-                unsafe {
-                    Cpu::set_current(cpu);
+            unsafe {
+                Cpu::set_current(cpu);
             }
 
             let idle_thread = Thread::new(self.get_kernel_process(), idle_thread, true).unwrap();
@@ -138,11 +152,8 @@ impl Scheduler {
             }
 
             let thread = Thread::new(SCHEDULER.get_kernel_process(), entry, false).unwrap();
-
-            interrupts::set_irq_handler(0, Self::yield_handler);
-            
-            cpu.set_current_thread(thread.clone());
             self.add_thread(thread.clone());
+
             self.add_thread(
                 unsafe { &*self.thread_destroyer_of_threads.get() }
                     .as_ref()
@@ -150,18 +161,21 @@ impl Scheduler {
                     .clone(),
             );
 
+            interrupts::set_irq_handler(0, Self::yield_handler);
             timer::init(Self::timer_handler);
             self.state.store(SchedulerState::Started);
-            
-            thread
+
+            info!(target: "scheduler", "Scheduler started");
+
+            cpu.idle_thread().atomic_state().store(ThreadState::Running);
+            cpu.set_current_thread(cpu.idle_thread().clone());
+
+            self.schedule()
         };
-        
-        info!(target: "scheduler", "Scheduler started");
-        
+
         unsafe {
-            thread.atomic_state().store(ThreadState::Running);
-            let context = thread.read().saved_context();
-            drop(thread);
+            let context = thread_to_run.read().saved_context();
+            drop(thread_to_run);
             exception_exit(context)
         }
     }
@@ -178,19 +192,20 @@ impl Scheduler {
         let cpu = Cpu::current();
         let current_thread = cpu.current_thread();
         let can_rerun = {
-            if current_thread.state() == ThreadState::Exited {
-                false
-            } else {
-                assert!(current_thread.state() == ThreadState::Running);
-                current_thread.atomic_state().store(ThreadState::Paused);
+            if current_thread.state() == ThreadState::Running {
+                current_thread.atomic_state().store(ThreadState::Runnable);
                 !current_thread.is_idle_thread()
+            } else {
+                false
             }
         };
+
+        self.wake_up_waiting_threads();
 
         let mut threads = cpu.threads.lock();
 
         if can_rerun {
-            threads.push_back(current_thread);
+            threads.push_back(current_thread.clone());
         }
 
         let next_thread = loop {
@@ -198,31 +213,78 @@ impl Scheduler {
                 .pop_front()
                 .unwrap_or_else(|| cpu.idle_thread().clone());
 
-            if thread.state() != ThreadState::Exited {
+            if thread.state() == ThreadState::Runnable {
                 break thread;
             }
         };
 
         {
-            assert!(next_thread.state() == ThreadState::Paused);
             next_thread.atomic_state().store(ThreadState::Running);
             cpu.set_current_thread(next_thread.clone());
         }
+
+        self.config_timer(threads.len());
 
         trace!(target: "scheduler", "Run thread {} of process {} on CPU {}", next_thread.id(), next_thread.process().id(), cpu.id);
 
         next_thread
     }
 
+    fn config_timer(&self, runnable_threads_count: usize) {
+        let lower_waiting_time =
+            self.waiting_threads()
+                .read()
+                .get(0)
+                .and_then(|t| match t.state() {
+                    ThreadState::Waiting(time) => Some(time),
+                    _ => unreachable!(),
+                });
+
+        match (runnable_threads_count == 0, lower_waiting_time) {
+            (true, None) => {} // don't set the timer
+            (true, Some(ns)) => {
+                timer::tick_at_ns(ns);
+            }
+            (false, None) => timer::tick_in_ns(TIMESLICE_NS),
+            (false, Some(ns)) => {
+                let remaining_time = ns - timer::uptime_ns();
+                if remaining_time < TIMESLICE_NS {
+                    timer::tick_at_ns(ns);
+                } else {
+                    timer::tick_in_ns(TIMESLICE_NS);
+                }
+            }
+        }
+    }
+
+    fn wake_up_waiting_threads(&self) {
+        let uptime = timer::uptime_ns();
+        let mut runnable_threads = Cpu::current().threads.lock();
+        let mut waiting_threads = self.waiting_threads().write();
+        while let Some(thread) = waiting_threads.front() {
+            let wake_up_time = match thread.state() {
+                ThreadState::Waiting(time) => time,
+                _ => unreachable!()
+            };
+            if wake_up_time > uptime {
+                break;
+            }
+
+            let thread = waiting_threads.pop_front().unwrap(); // take it
+            thread.atomic_state().store(ThreadState::Runnable);
+            runnable_threads.push_back(thread);
+        }
+    }
+
     pub(in crate::scheduler) fn add_thread(&self, thread: ThreadRef) {
-        assert!(thread.state() == ThreadState::Paused);
+        assert!(thread.state() == ThreadState::Runnable);
         let cpu = Cpu::current();
         cpu.threads.lock().push_back(thread);
     }
 
     #[inline]
     pub fn yield_now(&self) {
-        assert!(
+        debug_assert!(
             {
                 let spsel: u64;
                 let current_el: u64;
@@ -265,10 +327,11 @@ impl Scheduler {
                     todo!("destroy process");
                 }
             }
-            threads_to_destroy.clear(); // this will drop all threads
+            threads_to_destroy.clear(); // drop all threads
 
-            loop {}
-            // yield_now();
+            drop(threads_to_destroy); // unlock before going to sleep
+
+            sleep(1_000_000_000); // 100 ms
         }
     }
 }
@@ -321,9 +384,9 @@ impl Cpu {
     }
 
     #[inline]
-    fn current_thread(&self) -> ThreadRef {
+    fn current_thread(&self) -> &ThreadRef {
         let ptr = self.current_thread.as_ptr();
-        unsafe { Clone::clone(&(*ptr).as_ref().expect("No current thread")) }
+        unsafe { &(*ptr).as_ref().expect("No current thread") }
     }
 
     #[inline]
