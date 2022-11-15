@@ -29,7 +29,7 @@ pub fn init(memory_map: &'static [MemoryDescriptor]) {
         pmm::init(memory_map);
         PMM_PAGE_ALLOCATOR
             .set(PmmPageAllocator::new(
-                &pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
+                pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
             ))
             .unwrap();
 

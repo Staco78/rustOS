@@ -14,7 +14,7 @@ use crate::{
     scheduler::SCHEDULER,
     utils::sync_once_cell::SyncOnceCell,
 };
-use core::{fmt::Debug, ptr};
+use core::{arch::asm, fmt::Debug, ptr};
 use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
@@ -49,6 +49,22 @@ pub const fn phys_to_virt(addr: PhysicalAddress) -> VirtualAddress {
     let addr = addr + PHYSICAL_LINEAR_MAPPING_START;
     assert!(PHYSICAL_LINEAR_MAPPING_START <= addr && addr < PHYSICAL_LINEAR_MAPPING_END);
     addr
+}
+
+#[inline]
+pub fn virt_to_phys(addr: VirtualAddress) -> Option<PhysicalAddress> {
+    let par = unsafe {
+        asm!("AT S1E1R, {}", in(reg) addr as usize);
+        let mut out: usize;
+        asm!("mrs {}, PAR_EL1", out(reg) out);
+        out
+    };
+    if (par & 1) == 1 {
+        None
+    } else {
+        let v = (par & 0xFFFFFFFF000) | (addr & 0xFFF);
+        Some(v)
+    }
 }
 
 #[inline]
@@ -303,6 +319,14 @@ impl MapOptions {
     pub fn default_4k() -> Self {
         Self {
             size: MapSize::Size4KB,
+            flags: Default::default(),
+        }
+    }
+
+    #[inline]
+    pub fn default_size(size: MapSize) -> Self {
+        Self {
+            size,
             flags: Default::default(),
         }
     }

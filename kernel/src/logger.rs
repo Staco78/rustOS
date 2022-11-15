@@ -1,20 +1,36 @@
 use core::fmt::Write;
 
 use log::Level;
+use spin::lock_api::Mutex;
 
-pub struct KernelLogger {}
+use crate::cpu;
 
-static LOGGER: KernelLogger = KernelLogger {};
+pub struct KernelLogger {
+    lock: Mutex<()>,
+}
+
+static LOGGER: KernelLogger = KernelLogger {
+    lock: Mutex::new(()),
+};
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
 // const TARGET_BLACKLIST_TRACE: &[&str] = &[];
-const TARGET_BLACKLIST_TRACE: &[&str] = &["pmm", "vmm", "kernel_heap", "interrupts", "scheduler", "timer"];
+const TARGET_BLACKLIST_TRACE: &[&str] = &[
+    "pmm",
+    "vmm",
+    "kernel_heap",
+    "interrupts",
+    "scheduler",
+    "timer",
+    "smp"
+];
 
 impl log::Log for KernelLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        if metadata.level() == Level::Trace && TARGET_BLACKLIST_TRACE
-            .iter()
-            .any(|s| *s == metadata.target())
+        if metadata.level() == Level::Trace
+            && TARGET_BLACKLIST_TRACE
+                .iter()
+                .any(|s| *s == metadata.target())
         {
             return false;
         }
@@ -39,6 +55,8 @@ impl log::Log for KernelLogger {
                 }
             };
 
+            let lock = self.lock.lock();
+
             let level = record.level();
             let color = match level {
                 Level::Error => "\x1B[91m", // red and bold
@@ -48,9 +66,14 @@ impl log::Log for KernelLogger {
                 Level::Trace => "\x1B[37m",
             };
             output.write_str(color).unwrap();
+
+            #[cfg(feature = "logger_cpu_id")]
+            write!(output, "[CPU {}] ", cpu::id()).unwrap();
+
             if level != Level::Info {
                 write!(output, "[{}] ", level).unwrap();
             }
+
             let target = record.target();
             // dont't show automatic target
             if !target.contains("::") && level != Level::Info {
@@ -58,6 +81,8 @@ impl log::Log for KernelLogger {
             }
             writeln!(output, "{}", record.args()).unwrap();
             output.write_str("\x1B[0m").unwrap(); // reset mode and color
+
+            drop(lock);
         }
     }
 

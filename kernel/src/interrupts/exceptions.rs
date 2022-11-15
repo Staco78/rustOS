@@ -1,10 +1,10 @@
 use core::{arch::global_asm, fmt::Display};
 
 use cortex_a::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
-use log::{debug, info};
+use log::{error, info};
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::cpu::InterruptFrame;
+use crate::cpu::{self, InterruptFrame};
 
 #[derive(Debug)]
 enum CpuException {
@@ -122,8 +122,7 @@ extern "C" {
 }
 
 pub fn init() {
-    // enable all interrupts
-    DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
+    enable_irqs();
 
     // set vector table
     unsafe { VBAR_EL1.set((&vector_table as *const ()).addr() as u64) };
@@ -134,11 +133,43 @@ pub fn init() {
 #[no_mangle]
 unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
     let frame = frame.as_mut().unwrap();
-    debug!("{}", frame);
+    error!("Exception in CPU {}", cpu::id());
+    error!("{}", frame);
     panic!("{}", CpuException::from_esr(ESR_EL1.get() as u32));
 }
 
 #[no_mangle]
 extern "C" fn interrupt_print(i: u32) {
     panic!("Received unwanted interrupt from vector {i}");
+}
+
+// return the value of the DAIF register before modification
+#[inline]
+pub fn disable_irqs() -> u64 {
+    let v = DAIF.get();
+    DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
+    v
+}
+
+// return the value of the DAIF register before modification
+#[inline]
+pub fn enable_irqs() -> u64 {
+    let v = DAIF.get();
+    DAIF.write(DAIF::D::Unmasked + DAIF::A::Unmasked + DAIF::I::Unmasked + DAIF::F::Unmasked);
+    v
+}
+
+// safety: v should come from disable_irqs()
+#[inline]
+pub unsafe fn restore_irqs(v: u64) {
+    DAIF.set(v)
+}
+
+#[macro_export]
+macro_rules! no_irq {
+    ($inner:block) => {{
+        let __daif_value = crate::exceptions::disable_irqs();
+        $inner;
+        unsafe { crate::exceptions::restore_irqs(__daif_value) };
+    }};
 }

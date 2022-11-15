@@ -14,8 +14,8 @@ use super::{
 
 #[derive(Debug)]
 pub struct VirtualAddressSpace {
-    ptr: *mut TableEntry, // the first table (the value in the TTBR register)
-    pub is_user: bool,    // TTBR0 or TTBR1 (before or after hole)
+    pub ptr: *mut TableEntry, // the first table
+    pub is_user: bool,        // TTBR0 or TTBR1 (before or after hole)
 }
 
 impl VirtualAddressSpace {
@@ -26,7 +26,7 @@ impl VirtualAddressSpace {
     }
 
     // return None if out of memory
-    pub fn _create_user() -> Option<Self> {
+    pub fn create_user() -> Option<Self> {
         let l1 = unsafe { PMM_PAGE_ALLOCATOR.get().unwrap().alloc(1) };
         if l1.is_null() {
             return None;
@@ -34,7 +34,7 @@ impl VirtualAddressSpace {
         let ptr = phys_to_virt(l1.addr()) as *mut u8;
         unsafe { ptr.write_bytes(0, PAGE_SIZE) };
 
-        Some(unsafe { Self::new(ptr.cast(), true) })
+        Some(unsafe { Self::new(l1.addr() as *mut _, true) })
     }
 
     #[inline]
@@ -55,6 +55,12 @@ impl Display for VirtualAddressSpace {
             "VirtualAddressSpace {{ ptr: {:p}, is_user: {} }}",
             self.ptr, self.is_user
         )
+    }
+}
+
+impl Drop for VirtualAddressSpace {
+    fn drop(&mut self) {
+        // TODO
     }
 }
 

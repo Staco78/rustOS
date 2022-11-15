@@ -21,5 +21,6 @@ tock-registers = "0.8"
 cortex-a = "8.0"  
 
 [features]
-default = ["qemu_debug"]
+default = ["qemu_debug", "logger_cpu_id"]
 qemu_debug = []
+logger_cpu_id = []

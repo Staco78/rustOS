@@ -14,6 +14,15 @@ pub struct CpuInterface {
 impl CpuInterface {
     pub fn new(base: VirtualAddress) -> Self {
         assert!(base != 0);
+        vmm()
+            .map_page(
+                phys_to_virt(base),
+                base,
+                MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b11, 2, true)),
+                AddrSpaceSelector::kernel(),
+            )
+            .unwrap();
+
         Self { base }
     }
 
@@ -22,16 +31,7 @@ impl CpuInterface {
         unsafe { &*(phys_to_virt(self.base) as *const CpuInterfaceRegs) }
     }
 
-    pub fn init(&mut self) {
-        vmm()
-            .map_page(
-                phys_to_virt(self.base),
-                self.base,
-                MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b11, 2, true)),
-                AddrSpaceSelector::kernel(),
-            )
-            .unwrap();
-
+    pub fn init(&self) {
         self.regs().ctlr.modify(GICC_CTLR::EnableGrp0::SET); // enable
         self.regs().pmr.modify(GICC_PMR::Priority.val(0xFF)); // accept all priorities
     }

@@ -150,7 +150,7 @@ impl ThreadRef {
     }
 
     #[inline]
-    pub fn atomic_state<'a>(&'a self) -> &'a AtomicCell<ThreadState> {
+    pub fn atomic_state(&self) -> &AtomicCell<ThreadState> {
         let ptr = self.data_ptr();
         unsafe { &(*ptr).state }
     }

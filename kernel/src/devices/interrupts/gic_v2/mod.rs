@@ -56,8 +56,13 @@ impl GenericInterruptController {
 }
 
 impl InterruptsChip for GenericInterruptController {
-    fn init(&mut self) {
+    fn init(&self) {
         self.distributor.init();
+        self.cpu_interface.init();
+    }
+
+    #[inline]
+    fn init_ap(&self) {
         self.cpu_interface.init();
     }
 
@@ -85,4 +90,6 @@ impl InterruptsChip for GenericInterruptController {
     fn send_sgi(&self, destination: CoreSelection, interrupt_id: u8) {
         self.distributor.send_sgi(destination, interrupt_id);
     }
+
+    
 }

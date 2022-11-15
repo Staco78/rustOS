@@ -2,11 +2,11 @@ use core::{alloc::GlobalAlloc, mem::size_of, ptr};
 
 use log::trace;
 use spin::lock_api::Mutex;
-use static_assertions::assert_eq_align;
+use static_assertions::{assert_eq_align, assert_eq_size};
 
 use crate::utils::byte_size::ByteSize;
 
-use super::{PageAllocator, constants::PAGE_SIZE};
+use super::{constants::PAGE_SIZE, PageAllocator};
 
 const MIN_PAGE_COUNT: usize = 16; // minimum page count to alloc from page allocator
 
@@ -50,23 +50,23 @@ impl<'a> Allocator<'a> {
             return ptr::null_mut();
         }
 
-        let block: *mut BlockHeader = chunk.byte_add(size_of::<ChunkHeader>()).cast();
+        let free = page_count * PAGE_SIZE - size_of::<ChunkHeader>() - size_of::<BlockHeader>();
 
-        let chunk_ref = chunk.as_mut().unwrap();
-        let block_ref = block.as_mut().unwrap();
+        *chunk = ChunkHeader {
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+            free,
+            page_count,
+        };
 
-        let size = page_count * PAGE_SIZE - size_of::<ChunkHeader>() - size_of::<BlockHeader>();
-
-        chunk_ref.prev = ptr::null_mut();
-        chunk_ref.next = ptr::null_mut();
-        chunk_ref.free = size;
-        chunk_ref.page_count = page_count;
-
-        block_ref.prev = ptr::null_mut();
-        block_ref.next = ptr::null_mut();
-        block_ref.size = chunk_ref.free as u32;
-        block_ref.allocated_size = 0;
-        block_ref.chunk = chunk;
+        let block: *mut BlockHeader = (*chunk).first();
+        *block = BlockHeader {
+            chunk,
+            prev: ptr::null_mut(),
+            next: ptr::null_mut(),
+            size: free as u32,
+            allocated_size: 0,
+        };
 
         chunk
     }
@@ -99,11 +99,12 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
         let mut current_chunk = *head;
         loop {
             assert!(!current_chunk.is_null());
-            let current_chunk_ref = current_chunk.as_mut().unwrap_unchecked(); // safety: the while condition assert the ptr isn't null
+            let current_chunk_ref = current_chunk.as_mut().unwrap_unchecked(); // safety: assert
 
+            // if the chunk contain enough free space
             if current_chunk_ref.free >= size as usize {
                 let mut current_block = current_chunk_ref.first();
-                assert!(!current_block.is_null());
+                debug_assert!(!current_block.is_null());
                 while !current_block.is_null() {
                     let current_block_ref = current_block.as_mut().unwrap_unchecked(); // safety: the while condition assert the ptr isn't null
 
@@ -112,6 +113,13 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
                         if current_block_ref.size >= size {
                             current_block_ref.allocated_size = size;
                             current_chunk_ref.free -= size as usize;
+                            debug_assert!(
+                                current_block_ref.data().is_aligned_to(layout.align()),
+                                "{:p} isn't aligned to {}",
+                                current_block_ref.data(),
+                                layout.align()
+                            );
+
                             return current_block_ref.data();
                         } else {
                             // go to the next
@@ -121,31 +129,46 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
                     } else {
                         // block in use
                         let usable_size = current_block_ref.size - current_block_ref.allocated_size;
-                        let usable_size = if usable_size >= size_of::<BlockHeader>() as u32 {
-                            usable_size - size_of::<BlockHeader>() as u32
-                        } else {
-                            0
-                        };
+                        let usable_size = usable_size.saturating_sub(
+                            (size_of::<BlockHeader>()
+                                + current_block_ref
+                                    .data()
+                                    .byte_add(current_block_ref.allocated_size as usize)
+                                    .align_offset(size_of::<usize>()))
+                                as u32,
+                        );
 
                         if usable_size >= size {
-                            let new_block: *mut BlockHeader = current_block_ref
+                            let new_block: *mut u8 = current_block_ref
                                 .data()
-                                .byte_add(current_block_ref.allocated_size as usize)
+                                .byte_add(current_block_ref.allocated_size as usize);
+                            let new_block: *mut BlockHeader = new_block
+                                .byte_add(new_block.align_offset(size_of::<usize>())) // align it to usize
                                 .cast();
-                            let new_block_ref = new_block.as_mut().unwrap();
-                            let next = current_block_ref.next;
-                            current_block_ref.next = new_block;
+
+                            *new_block = BlockHeader {
+                                chunk: current_chunk,
+                                prev: current_block,
+                                next: current_block_ref.next,
+                                size: usable_size,
+                                allocated_size: size,
+                            };
+
                             current_block_ref.size = current_block_ref.allocated_size;
-                            new_block_ref.next = next;
-                            new_block_ref.prev = current_block;
-                            new_block_ref.size = usable_size;
-                            new_block_ref.allocated_size = size;
-                            new_block_ref.chunk = current_chunk;
+                            current_block_ref.next = new_block;
+
+                            let new_block_ref = new_block.as_mut().unwrap();
 
                             current_chunk_ref.free -= size as usize + size_of::<BlockHeader>();
-                            if !next.is_null() {
-                                (*next).prev = new_block;
+                            if !new_block_ref.next.is_null() {
+                                (*new_block_ref.next).prev = new_block;
                             }
+                            debug_assert!(
+                                new_block_ref.data().is_aligned_to(layout.align()),
+                                "{:p} isn't aligned to {}",
+                                new_block_ref.data(),
+                                layout.align()
+                            );
                             return new_block_ref.data();
                         } else {
                             // go to the next
@@ -236,11 +259,13 @@ struct ChunkHeader {
 }
 
 assert_eq_align!(ChunkHeader, usize);
+assert_eq_size!(ChunkHeader, [usize; 4]);
 
 impl ChunkHeader {
     #[inline]
     fn first(&mut self) -> *mut BlockHeader {
         let self_ptr: *mut ChunkHeader = self;
+        assert!(self_ptr.is_aligned() && self_ptr.is_aligned_to(size_of::<usize>()));
         unsafe { self_ptr.byte_add(size_of::<Self>()).cast() }
     }
 }
@@ -256,11 +281,13 @@ struct BlockHeader {
 }
 
 assert_eq_align!(BlockHeader, usize);
+assert_eq_size!(BlockHeader, [usize; 4]);
 
 impl BlockHeader {
     #[inline]
     fn data(&mut self) -> *mut u8 {
         let self_ptr: *mut BlockHeader = self;
+        assert!(self_ptr.is_aligned() && self_ptr.is_aligned_to(size_of::<usize>()));
         unsafe { self_ptr.byte_add(size_of::<Self>()).cast() }
     }
 }

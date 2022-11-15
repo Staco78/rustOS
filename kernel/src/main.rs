@@ -5,13 +5,18 @@
 #![feature(pointer_byte_offsets)]
 #![feature(default_alloc_error_handler)]
 #![feature(sync_unsafe_cell)]
+#![feature(cstr_from_bytes_until_nul)]
+#![feature(pointer_is_aligned)]
+#![feature(let_chains)]
 
 mod acpi;
 mod cpu;
+mod device_tree;
 mod devices;
 mod interrupts;
 mod logger;
 mod memory;
+mod psci;
 mod scheduler;
 mod timer;
 mod utils;
@@ -50,6 +55,8 @@ extern "C" fn main(
     config_table_len: u32,
     memory_map_ptr: PhysicalAddress,
     memory_map_len: u32,
+    dtb_ptr: PhysicalAddress,
+    dtb_len: u32,
 ) -> ! {
     logger::init();
     assert!(
@@ -94,7 +101,8 @@ extern "C" fn main(
         )
     };
     memory::init(memory_map);
-    SCHEDULER.init();
+    device_tree::load(dtb_ptr, dtb_len);
+    psci::init();
     interrupts::init_chip(unsafe {
         ACPI_TABLES
             .assume_init_mut()
@@ -102,12 +110,17 @@ extern "C" fn main(
             .unwrap()
     });
 
-    SCHEDULER.register_cpu(0, true);
-    SCHEDULER.start(0, later_main);
+    {
+        let my_id = scheduler::register_cpus();
+        SCHEDULER.init(); // will start other cores
+        SCHEDULER.start(my_id, later_main);
+    }
 }
 
 fn later_main() -> ! {
-    Thread::new(current_process(), other_thread, false).unwrap().start();
+    Thread::new(current_process(), other_thread, false)
+        .unwrap()
+        .start();
     exit(0);
 }
 

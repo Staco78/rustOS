@@ -16,22 +16,25 @@ QEMU_FLAGS=-machine virt -cpu max \
         -drive if=pflash,format=raw,file=$(QEMU_CODE),readonly=on \
 		-drive if=pflash,format=raw,file=$(QEMU_VARS) \
         -drive format=raw,file=fat:rw:`pwd`/$(ROOT_PATH) \
-        -net none -monitor stdio -smp 4 -m 256
+        -net none -monitor stdio -smp 4 -m 256 
+		# -net none -monitor stdio -smp 4 -m 256 -serial file:log 
 
 
-run: build loader
+run: build
 	$(QEMU) $(QEMU_FLAGS)
 
 debug: build
 	$(QEMU) $(QEMU_FLAGS) -s -S
 
-.PHONY: build
-build: 
+build: kernel loader
+
+.PHONY: kernel
+kernel: 
 	RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS)
 
 .PHONY: loader
 loader:
-	cd loader && cargo build $(CARGO_FLAGS) && cd ..
+	cd loader && RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS) && cd ..
 
 clean:
 	cargo clean

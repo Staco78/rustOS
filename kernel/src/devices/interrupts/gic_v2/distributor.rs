@@ -24,7 +24,7 @@ impl Distributor {
         unsafe { &*(phys_to_virt(self.base) as *const DistributorRegs) }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&self) {
         vmm()
             .map_page(
                 phys_to_virt(self.base),

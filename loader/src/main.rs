@@ -24,6 +24,7 @@ use uefi::{
         boot::{AllocateType, MemoryDescriptor, MemoryType},
         Runtime,
     },
+    CStr16,
 };
 
 use crate::memory::{CustomMemoryTypes, VirtualAddress};
@@ -37,6 +38,8 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let stdout = system_table.stdout();
     stdout.clear().unwrap();
     memory::init();
+
+    let dtb = load_file(handle, &system_table, cstr16!("dtb.dtb"), MemoryType::custom(CustomMemoryTypes::Dtb as u32));
 
     let kernel_entry = load_kernel(handle, &system_table);
     let kernel_stack_addr = system_table.boot_services().allocate_pages(
@@ -53,6 +56,9 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         let config_table_len: u32 = system_table.config_table().len() as u32;
         let memory_map_ptr = memory_map.as_ptr().addr();
         let memory_map_len: u32 = memory_map.len() as u32;
+        let dtb_ptr = dtb.as_ptr().addr();
+        let dtb_len = dtb.len() as u32;
+
 
         asm!(
             "mov sp, {}",
@@ -63,6 +69,8 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             in("x1") config_table_len,
             in("x2") memory_map_ptr,
             in("x3") memory_map_len,
+            in("x4") dtb_ptr,
+            in("x5") dtb_len
         ); // this should never return
         unreachable!();
     }
@@ -101,8 +109,12 @@ fn exit_boot_services(
     (system_table, result)
 }
 
-// return entry point
-fn load_kernel(handle: Handle, system_table: &SystemTable<Boot>) -> u64 {
+fn load_file(
+    handle: Handle,
+    system_table: &SystemTable<Boot>,
+    file_name: &CStr16,
+    mem_type: MemoryType,
+) -> &'static mut [u8] {
     let protocol = system_table
         .boot_services()
         .get_image_file_system(handle)
@@ -111,7 +123,7 @@ fn load_kernel(handle: Handle, system_table: &SystemTable<Boot>) -> u64 {
         .open_volume()
         .unwrap();
     let file = volume
-        .open(cstr16!("kernel"), FileMode::Read, FileAttribute::SYSTEM)
+        .open(file_name, FileMode::Read, FileAttribute::SYSTEM)
         .unwrap();
     let mut file = file.into_regular_file().unwrap();
     let file_info: Box<FileInfo> = file.get_boxed_info().unwrap();
@@ -119,11 +131,23 @@ fn load_kernel(handle: Handle, system_table: &SystemTable<Boot>) -> u64 {
 
     let buff = system_table
         .boot_services()
-        .allocate_pool(MemoryType::LOADER_DATA, size)
+        .allocate_pool(mem_type, size)
         .unwrap();
     assert!(!buff.is_null());
     let buff = unsafe { slice::from_raw_parts_mut(buff, size) };
     file.read(buff).unwrap();
+
+    buff
+}
+
+// return entry point
+fn load_kernel(handle: Handle, system_table: &SystemTable<Boot>) -> u64 {
+    let buff = load_file(
+        handle,
+        system_table,
+        cstr16!("kernel"),
+        MemoryType::LOADER_DATA,
+    );
     let mut loader = KernelLoader::new(system_table.boot_services());
     let binary = ElfBinary::new(buff).unwrap();
     binary.load(&mut loader).unwrap();
@@ -173,7 +197,7 @@ impl<'a> ElfLoader for KernelLoader<'a> {
     }
 
     fn relocate(&mut self, _entry: RelocationEntry) -> Result<(), ElfLoaderErr> {
-        todo!();
+        unimplemented!();
     }
 
     fn load(&mut self, _flags: Flags, base: VAddr, region: &[u8]) -> Result<(), ElfLoaderErr> {

@@ -1,9 +1,11 @@
 use core::fmt::Display;
 
-use cortex_a::{asm::wfi, registers::DAIF};
+use cortex_a::{asm::wfi, registers::MPIDR_EL1};
 use log::error;
 use static_assertions::assert_eq_size;
-use tock_registers::interfaces::Writeable;
+use tock_registers::interfaces::Readable;
+
+use crate::interrupts::exceptions::disable_irqs;
 
 #[panic_handler]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
@@ -31,9 +33,14 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
 pub fn halt() -> ! {
     loop {
-        DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
+        disable_irqs();
         wfi();
     }
+}
+
+pub fn id() -> u32 {
+    let id = MPIDR_EL1.get() & !0x80000000; // get cpu id from MPIDR reg and mask bit 31 which is always set
+    id as u32
 }
 
 #[derive(Debug)]

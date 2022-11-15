@@ -10,7 +10,8 @@ use log::trace;
 use crate::{acpi::madt::Madt, cpu::InterruptFrame, devices::gic_v2::GenericInterruptController};
 
 pub trait InterruptsChip: Sync + Send {
-    fn init(&mut self);
+    fn init(&self);
+    fn init_ap(&self);
     fn enable_interrupt(&self, interrupt: u32);
     fn disable_interrupt(&self, interrupt: u32);
 
@@ -31,7 +32,7 @@ pub enum CoreSelection {
 static CHIP: SyncUnsafeCell<Option<Arc<dyn InterruptsChip>>> = SyncUnsafeCell::new(None);
 
 pub fn init_chip(madt: &Madt) {
-    let mut gic = GenericInterruptController::new(madt);
+    let gic = GenericInterruptController::new(madt);
     gic.init();
     unsafe { *CHIP.get() = Some(Arc::new(gic)) };
 }
