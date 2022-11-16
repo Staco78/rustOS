@@ -244,8 +244,8 @@ pub fn get_root() -> &'static Node {
 
 pub fn get_node(path: &str) -> Option<&'static Node> {
     let mut current_node = get_root();
-    let mut iter = path.split('/');
-    while let Some(name) = iter.next() {
+    let iter = path.split('/');
+    for name in iter {
         current_node = current_node.get_child(name)?;
     }
     Some(current_node)

@@ -4,12 +4,8 @@ use super::{
 };
 use crate::{
     memory::{
-        constants::{
-            KERNEL_HEAP_END, KERNEL_HEAP_START, KERNEL_VIRT_SPACE_START, PAGE_SIZE,
-            PHYSICAL_LINEAR_MAPPING_END, PHYSICAL_LINEAR_MAPPING_START, USER_SPACE_END,
-            USER_SPACE_START, USER_VIRT_SPACE_END,
-        },
-        mmu::TableEntry,
+        constants::PAGE_SIZE, mmu::TableEntry, KERNEL_VIRT_SPACE_RANGE, PHYSICAL_LINEAR_MAPPING_RANGE,
+        USER_VIRT_SPACE_RANGE, KERNEL_HEAP_RANGE, USER_SPACE_RANGE,
     },
     scheduler::SCHEDULER,
     utils::sync_once_cell::SyncOnceCell,
@@ -45,9 +41,9 @@ pub fn create_current_kernel_addr_space() -> AddrSpaceLock {
 
 #[inline]
 pub const fn phys_to_virt(addr: PhysicalAddress) -> VirtualAddress {
-    assert!(addr < USER_VIRT_SPACE_END);
-    let addr = addr + PHYSICAL_LINEAR_MAPPING_START;
-    assert!(PHYSICAL_LINEAR_MAPPING_START <= addr && addr < PHYSICAL_LINEAR_MAPPING_END);
+    debug_assert!(addr < USER_VIRT_SPACE_RANGE.end);
+    let addr = addr + PHYSICAL_LINEAR_MAPPING_RANGE.start;
+    debug_assert!(addr >= PHYSICAL_LINEAR_MAPPING_RANGE.start);
     addr
 }
 
@@ -104,13 +100,14 @@ impl<'a> VirtualMemoryManager<'a> {
         addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, MapError> {
         trace!(target: "vmm", "Map {:p} to {:p}", from as *const (), to as *const ());
-        if from >= USER_VIRT_SPACE_END && from < KERNEL_VIRT_SPACE_START {
+        if !KERNEL_VIRT_SPACE_RANGE.contains(&from) {
+            // FIXME: wtf why (no user support ?)
             return Err(MapError::InvalidVirtualAddr);
         }
 
         let mut addr_space = addr_space.lock();
         {
-            let is_user = from < USER_VIRT_SPACE_END;
+            let is_user = USER_VIRT_SPACE_RANGE.contains(&from);
             if addr_space.is_user != is_user {
                 return Err(MapError::InvalidAddrSpace);
             }
@@ -126,13 +123,13 @@ impl<'a> VirtualMemoryManager<'a> {
         addr_space: AddrSpaceSelector,
     ) -> Result<PhysicalAddress, UnmapError> {
         trace!(target: "vmm", "Unmap {:p}", addr as *const ());
-        if addr >= USER_VIRT_SPACE_END && addr < KERNEL_VIRT_SPACE_START {
+        if !KERNEL_VIRT_SPACE_RANGE.contains(&addr) {
             return Err(UnmapError::InvalidVirtualAddr);
         }
 
         let mut addr_space = addr_space.lock();
         {
-            let is_user = addr < USER_VIRT_SPACE_END;
+            let is_user = USER_VIRT_SPACE_RANGE.contains(&addr);
             if addr_space.is_user != is_user {
                 return Err(UnmapError::InvalidAddrSpace);
             }
@@ -157,13 +154,13 @@ impl<'a> VirtualMemoryManager<'a> {
             return Err(FindSpaceError::InvalidAddrSpace);
         }
 
-        let (min_address, max_address) = match usage {
-            MemoryUsage::KernelHeap => (KERNEL_HEAP_START, KERNEL_HEAP_END),
-            MemoryUsage::UserData => (USER_SPACE_START, USER_SPACE_END),
+        let range = match usage {
+            MemoryUsage::KernelHeap => KERNEL_HEAP_RANGE,
+            MemoryUsage::UserData => USER_SPACE_RANGE,
         };
 
         self.mmu
-            .find_free_pages(count, min_address, max_address, &addr_space)
+            .find_free_pages(count, range, &addr_space)
     }
 
     pub fn alloc_pages(

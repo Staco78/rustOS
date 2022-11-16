@@ -289,7 +289,7 @@ impl Scheduler {
                 ThreadState::Waiting(time) => time,
                 _ => unreachable!(),
             };
-            if wake_up_time > uptime {
+            if wake_up_time - 1000 > uptime {
                 break;
             }
 

@@ -168,7 +168,7 @@ pub unsafe fn restore_irqs(v: u64) {
 #[macro_export]
 macro_rules! no_irq {
     ($inner:block) => {{
-        let __daif_value = crate::exceptions::disable_irqs();
+        let __daif_value = $crate::exceptions::disable_irqs();
         $inner;
         unsafe { crate::exceptions::restore_irqs(__daif_value) };
     }};

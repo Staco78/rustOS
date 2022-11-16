@@ -1,11 +1,11 @@
-use crate::memory::KERNEL_VIRT_SPACE_START;
+use crate::memory::KERNEL_VIRT_SPACE_RANGE;
 
 use super::{
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
     vmm::{phys_to_virt, FindSpaceError, MapError, MapOptions, MapSize, UnmapError},
     PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
-use core::{arch::asm, fmt::Debug, ptr, slice};
+use core::{arch::asm, fmt::Debug, ptr, slice, ops::Range};
 use modular_bitfield::prelude::*;
 
 #[bitfield(bits = 12)]
@@ -539,31 +539,30 @@ impl<'a> Mmu<'a> {
     pub fn find_free_pages(
         &self,
         count: usize,
-        min_addr: VirtualAddress,
-        max_addr: VirtualAddress,
+        range: Range<VirtualAddress>,
         addr_space: &VirtualAddressSpace,
     ) -> Result<VirtualAddress, FindSpaceError> {
         assert!(count > 0);
-        assert!(min_addr < max_addr);
-        assert!(count <= (max_addr - min_addr));
-        assert!(min_addr % PAGE_SIZE == 0);
-        assert!(max_addr % PAGE_SIZE == 0);
+        assert!(!range.is_empty());
+        assert!(count <= (range.end - range.start));
+        assert!(range.start % PAGE_SIZE == 0);
+        assert!(range.end % PAGE_SIZE == 0);
         assert!(
-            min_addr % (1024 * 1024 * 1024) == 0 && max_addr % (1024 * 1024 * 1024) == 0,
+            range.start % (1024 * 1024 * 1024) == 0 && range.end % (1024 * 1024 * 1024) == 0,
             "Virtual memory regions must be aligned to 1 GB"
         );
         assert!(
-            max_addr - min_addr <= 512 * 1024 * 1024 * 1024,
+            range.end - range.start <= 512 * 1024 * 1024 * 1024,
             "Find free pages doesn't support search range larger than 512 GB"
         );
         assert!(
-            get_page_level_index(min_addr, PageLevel::L0)
-                == get_page_level_index(max_addr - 1, PageLevel::L0)
+            get_page_level_index(range.start, PageLevel::L0)
+                == get_page_level_index(range.end - 1, PageLevel::L0)
         );
 
-        let l0_index = get_page_level_index(min_addr, PageLevel::L0);
-        let min_l1_index = get_page_level_index(min_addr, PageLevel::L1);
-        let mut max_l1_index = get_page_level_index(max_addr, PageLevel::L1);
+        let l0_index = get_page_level_index(range.start, PageLevel::L0);
+        let min_l1_index = get_page_level_index(range.start, PageLevel::L1);
+        let mut max_l1_index = get_page_level_index(range.end, PageLevel::L1);
         if max_l1_index == 0 {
             max_l1_index = 511;
         }
@@ -577,7 +576,7 @@ impl<'a> Mmu<'a> {
                 Err(TableGetError::AlreadyMappedToBlock) => {
                     return Err(FindSpaceError::OutOfVirtualSpace)
                 }
-                Err(TableGetError::NotMapped) => return Ok(min_addr),
+                Err(TableGetError::NotMapped) => return Ok(range.start),
                 Ok(table) => table,
             };
             table
@@ -586,7 +585,7 @@ impl<'a> Mmu<'a> {
         let page_off = if addr_space.is_user {
             0
         } else {
-            KERNEL_VIRT_SPACE_START / PAGE_SIZE
+            KERNEL_VIRT_SPACE_RANGE.start / PAGE_SIZE
         };
 
         let mut found_pages = 0usize;
