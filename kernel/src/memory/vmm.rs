@@ -100,8 +100,7 @@ impl<'a> VirtualMemoryManager<'a> {
         addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, MapError> {
         trace!(target: "vmm", "Map {:p} to {:p}", from as *const (), to as *const ());
-        if !KERNEL_VIRT_SPACE_RANGE.contains(&from) {
-            // FIXME: wtf why (no user support ?)
+        if !KERNEL_VIRT_SPACE_RANGE.contains(&from) && !USER_VIRT_SPACE_RANGE.contains(&from) {
             return Err(MapError::InvalidVirtualAddr);
         }
 
