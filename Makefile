@@ -26,7 +26,7 @@ run: build
 debug: build
 	$(QEMU) $(QEMU_FLAGS) -s -S
 
-build: kernel loader
+build: kernel loader initrd.tar
 
 .PHONY: kernel
 kernel: 
@@ -35,6 +35,11 @@ kernel:
 .PHONY: loader
 loader:
 	cd loader && RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS) && cd ..
+
+.PHONY: initrd.tar
+initrd.tar:
+	@echo creating initrd...
+	$(shell cd initrd && tar -cf ../initrd.tar * -H gnu --no-xattrs && cd ..)
 
 clean:
 	cargo clean

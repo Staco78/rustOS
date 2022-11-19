@@ -50,6 +50,9 @@ pub fn init(memory_map: &'static [MemoryDescriptor]) {
 pub enum CustomMemoryTypes {
     Kernel = 0x80000000,
     MemoryMap = 0x80000001,
+    KernelStack = 0x80000002,
+    Dtb = 0x80000003,
+    Initrd = 0x80000004,
 }
 
 pub trait PageAllocator: Sync {

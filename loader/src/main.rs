@@ -40,6 +40,7 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     memory::init();
 
     let dtb = load_file(handle, &system_table, cstr16!("dtb.dtb"), MemoryType::custom(CustomMemoryTypes::Dtb as u32));
+    let initrd = load_file(handle, &system_table, cstr16!("initrd"), MemoryType::custom(CustomMemoryTypes::Initrd as u32));
 
     let kernel_entry = load_kernel(handle, &system_table);
     let kernel_stack_addr = system_table.boot_services().allocate_pages(
@@ -53,11 +54,13 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         info!("Running kernel...");
 
         let config_tables_ptr = system_table.config_table().as_ptr().addr();
-        let config_table_len: u32 = system_table.config_table().len() as u32;
+        let config_table_len = system_table.config_table().len();
         let memory_map_ptr = memory_map.as_ptr().addr();
-        let memory_map_len: u32 = memory_map.len() as u32;
+        let memory_map_len = memory_map.len();
         let dtb_ptr = dtb.as_ptr().addr();
-        let dtb_len = dtb.len() as u32;
+        let dtb_len = dtb.len();
+        let initrd_ptr = initrd.as_ptr().addr();
+        let initrd_len = initrd.len();
 
 
         asm!(
@@ -70,7 +73,9 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             in("x2") memory_map_ptr,
             in("x3") memory_map_len,
             in("x4") dtb_ptr,
-            in("x5") dtb_len
+            in("x5") dtb_len,
+            in("x6") initrd_ptr,
+            in("x7") initrd_len
         ); // this should never return
         unreachable!();
     }

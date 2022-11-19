@@ -228,8 +228,8 @@ impl Node {
 static mut ROOT_NODE: MaybeUninit<Node> = MaybeUninit::uninit();
 static mut BOOT_CPU: MaybeUninit<u32> = MaybeUninit::uninit();
 
-pub fn load(ptr: PhysicalAddress, len: u32) {
-    let buff = unsafe { slice::from_raw_parts(phys_to_virt(ptr) as *const u8, len as usize) };
+pub fn load(ptr: PhysicalAddress, len: usize) {
+    let buff = unsafe { slice::from_raw_parts(phys_to_virt(ptr) as *const u8, len) };
     let parser = Parser::new(buff);
     let root_node = parser.parse();
     unsafe {
