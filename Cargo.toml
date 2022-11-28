@@ -1,6 +1,5 @@
 [workspace]
-members = ["kernel"]
-exclude = ["loader"]
+members = ["kernel", "loader", "modules/*", "libs/*", "libs/module/macros"]
 
 [profile.dev]
 opt-level = 1
@@ -9,3 +8,6 @@ opt-level = 1
 lto = true
 debug = false
 strip = true
+
+[workspace.dependencies]
+log = { version = "0.4", features = ["release_max_level_trace"] }

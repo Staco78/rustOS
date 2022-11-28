@@ -1,6 +1,7 @@
 use core::fmt::Write;
 
-use log::Level;
+use log::{Level, Log};
+use module::export;
 use spin::lock_api::Mutex;
 
 use crate::cpu;
@@ -22,7 +23,7 @@ const TARGET_BLACKLIST_TRACE: &[&str] = &[
     "interrupts",
     "scheduler",
     "timer",
-    "smp"
+    "smp",
 ];
 
 impl log::Log for KernelLogger {
@@ -103,3 +104,8 @@ pub fn set_output(output: &'static mut dyn Write) {
 #[cfg(feature = "qemu_debug")]
 static mut QEMU_OUTPUT: crate::devices::pl011_uart::Pl011 =
     crate::devices::pl011_uart::Pl011::new(crate::memory::vmm::phys_to_virt(0x9000000));
+
+#[export(get_logger)]
+fn module_get_logger() -> &'static dyn Log {
+    &LOGGER
+}

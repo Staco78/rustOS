@@ -4,16 +4,16 @@ use log::info;
 use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
 
+mod addr_space;
 mod constants;
 mod heap;
 mod mmu;
 mod pmm;
 pub mod vmm;
-mod addr_space;
 
-pub use vmm::{vmm, MemoryUsage};
-pub use constants::*;
 pub use addr_space::*;
+pub use constants::*;
+pub use vmm::{vmm, MemoryUsage};
 
 use self::pmm::PmmPageAllocator;
 
@@ -58,4 +58,9 @@ pub enum CustomMemoryTypes {
 pub trait PageAllocator: Sync {
     unsafe fn alloc(&self, count: usize) -> *mut u8;
     unsafe fn dealloc(&self, ptr: usize, count: usize);
+}
+
+#[inline]
+pub const fn round_to_page_size(x: usize) -> usize {
+    ((x + PAGE_SIZE - 1) >> PAGE_SHIFT) << PAGE_SHIFT
 }

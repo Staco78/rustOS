@@ -1,16 +1,21 @@
 use super::{
     addr_space::VirtualAddressSpace, mmu::Mmu, AddrSpaceLock, AddrSpaceSelector, PageAllocator,
-    PhysicalAddress, VirtualAddress,
+    PhysicalAddress, VirtualAddress, MODULES_SPACE_RANGE,
 };
 use crate::{
     memory::{
-        constants::PAGE_SIZE, mmu::TableEntry, KERNEL_VIRT_SPACE_RANGE, PHYSICAL_LINEAR_MAPPING_RANGE,
-        USER_VIRT_SPACE_RANGE, KERNEL_HEAP_RANGE, USER_SPACE_RANGE,
+        constants::PAGE_SIZE, mmu::TableEntry, KERNEL_HEAP_RANGE, KERNEL_VIRT_SPACE_RANGE,
+        PHYSICAL_LINEAR_MAPPING_RANGE, USER_SPACE_RANGE, USER_VIRT_SPACE_RANGE,
     },
     scheduler::SCHEDULER,
     utils::sync_once_cell::SyncOnceCell,
 };
-use core::{arch::asm, fmt::Debug, ptr};
+use core::{
+    arch::asm,
+    fmt::Debug,
+    ptr,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
@@ -81,6 +86,7 @@ pub(super) fn get_kernel_addr_space<'a>() -> &'a AddrSpaceLock {
 pub struct VirtualMemoryManager<'a> {
     physical: &'a dyn PageAllocator,
     mmu: Mmu<'a>,
+    modules_load_address: AtomicUsize,
 }
 
 impl<'a> VirtualMemoryManager<'a> {
@@ -88,6 +94,7 @@ impl<'a> VirtualMemoryManager<'a> {
         Self {
             physical,
             mmu: Mmu::new(physical),
+            modules_load_address: AtomicUsize::new(MODULES_SPACE_RANGE.start),
         }
     }
 
@@ -111,7 +118,7 @@ impl<'a> VirtualMemoryManager<'a> {
                 return Err(MapError::InvalidAddrSpace);
             }
         }
-        self.mmu.map(from, to, options, &mut addr_space)
+        self.mmu.map_page(from, to, options, &mut addr_space)
     }
 
     // unmap virtual address "addr" and return the physical address where it was mapped
@@ -136,7 +143,7 @@ impl<'a> VirtualMemoryManager<'a> {
         self.mmu.unmap(addr, size, &mut addr_space)
     }
 
-    fn find_free_pages(
+    pub fn find_free_pages(
         &self,
         count: usize,
         usage: MemoryUsage,
@@ -145,6 +152,7 @@ impl<'a> VirtualMemoryManager<'a> {
         trace!(target: "vmm", "Search {count} pages of {:?} virtual space", usage);
         let is_user_addr_space = match usage {
             MemoryUsage::KernelHeap => false,
+            MemoryUsage::ModuleSpace => false,
             MemoryUsage::UserData => true,
         };
 
@@ -153,13 +161,24 @@ impl<'a> VirtualMemoryManager<'a> {
             return Err(FindSpaceError::InvalidAddrSpace);
         }
 
+        if usage == MemoryUsage::ModuleSpace {
+            // module space alloc is special
+            let addr = self
+                .modules_load_address
+                .fetch_add(count * PAGE_SIZE, Ordering::Relaxed);
+            if addr + count * PAGE_SIZE >= MODULES_SPACE_RANGE.end {
+                return Err(FindSpaceError::OutOfVirtualSpace);
+            }
+            return Ok(addr);
+        }
+
         let range = match usage {
             MemoryUsage::KernelHeap => KERNEL_HEAP_RANGE,
             MemoryUsage::UserData => USER_SPACE_RANGE,
+            MemoryUsage::ModuleSpace => unreachable!(),
         };
 
-        self.mmu
-            .find_free_pages(count, range, &addr_space)
+        self.mmu.find_free_pages(count, range, &addr_space)
     }
 
     pub fn alloc_pages(
@@ -171,7 +190,8 @@ impl<'a> VirtualMemoryManager<'a> {
         trace!(target: "vmm", "Alloc {} pages of {:?}", count, usage);
 
         let mut lock = addr_space.lock();
-        let virtual_addr = self.find_free_pages(count, usage, AddrSpaceSelector::new(&mut lock))?;
+        let virtual_addr =
+            self.find_free_pages(count, usage, AddrSpaceSelector::Unlocked(&mut lock))?;
         for i in 0..count {
             let r = unsafe { self.physical.alloc(1) };
             let physical_addr = if r.is_null() {
@@ -183,7 +203,7 @@ impl<'a> VirtualMemoryManager<'a> {
                 virtual_addr + i * PAGE_SIZE,
                 physical_addr,
                 MapOptions::default_4k(),
-                AddrSpaceSelector::new(&mut lock),
+                AddrSpaceSelector::Unlocked(&mut lock),
             )?;
         }
 
@@ -202,11 +222,29 @@ impl<'a> VirtualMemoryManager<'a> {
             let phys_addr = self.unmap_page(
                 addr + i * PAGE_SIZE,
                 MapSize::Size4KB,
-                AddrSpaceSelector::new(&mut lock),
+                AddrSpaceSelector::Unlocked(&mut lock),
             )?;
             unsafe { self.physical.dealloc(phys_addr, 1) };
         }
         Ok(())
+    }
+
+    pub fn alloc_pages_at_addr(
+        &self,
+        addr: VirtualAddress,
+        count: usize,
+        flags: MapFlags,
+        addr_space: AddrSpaceSelector,
+    ) -> Result<VirtualAddress, AllocError> {
+        let mut addr_space = addr_space.lock();
+        let phys_addr = unsafe { self.physical.alloc(count) };
+        if phys_addr.is_null() {
+            return Err(AllocError::OutOfMemory);
+        }
+
+        Ok(self
+            .mmu
+            .map(addr, phys_addr.addr(), count, flags, &mut addr_space)?)
     }
 }
 
@@ -268,7 +306,12 @@ impl MapFlags {
     }
 
     #[inline]
-    fn remap(self) -> bool {
+    pub fn default_rw(read_only: bool) -> Self {
+        Self::new(read_only, false, 0b11, 1, false)
+    }
+
+    #[inline]
+    pub fn force_remap(self) -> bool {
         self.0 & 0b10000000 != 0
     }
 
@@ -326,16 +369,12 @@ impl MapOptions {
             flags: Default::default(),
         }
     }
-
-    #[inline]
-    pub fn force_remap(self) -> bool {
-        self.flags.remap()
-    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum MemoryUsage {
     KernelHeap,
+    ModuleSpace,
     UserData,
 }
 

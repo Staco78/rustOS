@@ -7,18 +7,23 @@ CARGO_FLAGS=
 RELEASE ?= 0
 ifeq ($(RELEASE), 1)
     CARGO_FLAGS += -r
-	ROOT_PATH=root/release
+	RELEASE_PATH=release
 else
-	ROOT_PATH=root/debug
+	RELEASE_PATH=debug
 endif
+
+MODULES_DIRS=$(shell find ./modules/ -maxdepth 1 -type d -not -path "./modules/")
+MODULES=$(shell find ./modules/ -maxdepth 1 -type d -not -path "./modules/" | cut -d/ -f3 | awk '$$0="initrd/"$$0".kmod"')
+LIBS_DIRS=$(shell find ./libs/ -maxdepth 1 -type d -not -path "./libs/")
 
 QEMU_FLAGS=-machine virt -cpu max \
         -drive if=pflash,format=raw,file=$(QEMU_CODE),readonly=on \
 		-drive if=pflash,format=raw,file=$(QEMU_VARS) \
-        -drive format=raw,file=fat:rw:`pwd`/$(ROOT_PATH) \
+        -drive format=raw,file=fat:rw:`pwd`/root/$(RELEASE_PATH) \
         -net none -monitor stdio -smp 4 -m 256 
 		# -net none -monitor stdio -smp 4 -m 256 -serial file:log 
 
+export RUST_TARGET_PATH = $(shell pwd)/targets
 
 run: build
 	$(QEMU) $(QEMU_FLAGS)
@@ -30,17 +35,37 @@ build: kernel loader initrd.tar
 
 .PHONY: kernel
 kernel: 
-	RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS)
+	cd kernel && RUSTFLAGS="-C link-args=--export-dynamic" cargo build $(CARGO_FLAGS) --target aarch64-kernel && cd ..
+
+.PHONY: symbols
+symbols: kernel $(MODULES)
+	nm -Dg root/$(RELEASE_PATH)/kernel | grep -f symbols | scripts/create_ksymbols.sh
 
 .PHONY: loader
 loader:
-	cd loader && RUST_TARGET_PATH=`pwd` cargo build $(CARGO_FLAGS) && cd ..
+	cd loader && cargo build $(CARGO_FLAGS) --target aarch64-unknown-uefi && cd ..
+
+.PHONY: $(MODULES)
+$(MODULES):
+	cd modules/$(basename $(@F)) && cargo build $(CARGO_FLAGS) --target aarch64-modules && cd ../..
+	cp target/aarch64-modules/$(RELEASE_PATH)/lib$(basename $(@F)).so initrd/$(@F)
 
 .PHONY: initrd.tar
-initrd.tar:
+initrd.tar: symbols $(MODULES)
 	@echo creating initrd...
 	$(shell cd initrd && tar -cf ../initrd.tar * -H gnu --no-xattrs && cd ..)
 
+check:
+	@cargo check -q --message-format=json --manifest-path=kernel/Cargo.toml --target=targets/aarch64-kernel.json
+	@cargo check -q --message-format=json --manifest-path=loader/Cargo.toml --target=aarch64-unknown-uefi
+	@(for module in $(MODULES_DIRS) ; do \
+        cargo check -q --message-format=json --manifest-path=$$module/Cargo.toml --target=targets/aarch64-modules.json ; \
+    done)
+	@(for lib in $(LIBS_DIRS) ; do \
+        cargo check -q --message-format=json --manifest-path=$$lib/Cargo.toml --target=targets/aarch64-modules.json ; \
+    done)
+
 clean:
 	cargo clean
-	cd loader && cargo clean && cd ..
+	rm symbols
+	rm initrd.tar

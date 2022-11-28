@@ -1,5 +1,5 @@
 [build]
-target = "aarch64-rustos"
+target = "aarch64-kernel"
 
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc"]

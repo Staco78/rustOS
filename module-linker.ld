@@ -1,33 +1,36 @@
-ENTRY(start)
 OUTPUT_FORMAT(elf64-aarch64)
 
-KERNEL_OFFSET = 0xFFFFFFFF80000000; # -2GB
-
 SECTIONS {
-    . = KERNEL_OFFSET;
+    . = SIZEOF_HEADERS;
 
-    .text ALIGN(4K) : AT(ADDR(.text) - KERNEL_OFFSET)
+    .text ALIGN(4K) :
     {
         *(.text .text.*)
+        *(.plt)
     }
 
-    .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_OFFSET)
+    .got ALIGN(4K) :
+    {
+        *(.got.*)
+    }
+
+    .rodata ALIGN(4K) :
     {
         *(.rodata .rodata.*)
     }
 
-    .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_OFFSET)
+    .dynsym : { *(.dynsym) }
+    .dynstr : { *(.dynstr) }
+
+    .data ALIGN(4K) :
     {
         *(.data .data.*)
     }
 
-    .bss ALIGN(4K) : AT(ADDR(.bss) - KERNEL_OFFSET)
+    .bss ALIGN(4K) :
     {
         *(.bss .bss.*)
     }
-
-    .dynsym ALIGN(4K) : { *(.dynsym) }
-    .dynstr : { *(.dynstr) }
 
     /DISCARD/ : { *(.comment) }
     /DISCARD/ : { *(.note.GNU-STACK) }

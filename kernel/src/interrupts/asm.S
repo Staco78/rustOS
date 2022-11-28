@@ -25,14 +25,12 @@ mrs x1, SPSR_EL1
 stp x0, x1, [sp, #16 * 16]
 
 mov x0, sp
-.global \name
 // the high-level handler return a *mut InterruptFrame that we use to eret 
 bl \name
 
 b exception_exit
 .endm
 
-.global vector_table
 .balign 2048
 vector_table:
 

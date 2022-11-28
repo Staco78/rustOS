@@ -1,3 +1,6 @@
 /target
 QEMU_VARS.fd
 QEMU_CODE.fd
+symbols
+initrd/*
+initrd.tar

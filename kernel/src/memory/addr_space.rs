@@ -95,11 +95,6 @@ pub enum AddrSpaceSelector<'a> {
 
 impl<'a> AddrSpaceSelector<'a> {
     #[inline]
-    pub fn new(addr_space: &'a mut VirtualAddressSpace) -> Self {
-        Self::Unlocked(addr_space)
-    }
-
-    #[inline]
     pub fn kernel() -> Self {
         Self::Locked(vmm::get_kernel_addr_space())
     }

@@ -2,10 +2,10 @@ use crate::memory::KERNEL_VIRT_SPACE_RANGE;
 
 use super::{
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
-    vmm::{phys_to_virt, FindSpaceError, MapError, MapOptions, MapSize, UnmapError},
+    vmm::{phys_to_virt, FindSpaceError, MapError, MapFlags, MapOptions, MapSize, UnmapError},
     PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
-use core::{arch::asm, fmt::Debug, ptr, slice, ops::Range};
+use core::{arch::asm, fmt::Debug, ops::Range, ptr, slice};
 use modular_bitfield::prelude::*;
 
 #[bitfield(bits = 12)]
@@ -240,8 +240,45 @@ impl<'a> Mmu<'a> {
         Self { page_allocator }
     }
 
-    #[inline]
     pub fn map(
+        &self,
+        from: VirtualAddress,
+        to: PhysicalAddress,
+        count: usize,
+        flags: MapFlags,
+        addr_space: &mut VirtualAddressSpace,
+    ) -> Result<VirtualAddress, MapError> {
+        assert!(from % PAGE_SIZE == 0);
+        assert!(to % PAGE_SIZE == 0);
+
+        let max_vaddr = from + count * PAGE_SIZE;
+
+        let mut vaddr = from;
+        let mut paddr = to;
+        while vaddr < max_vaddr {
+            let remaining = max_vaddr - vaddr;
+            // if aligned to 1GB
+            if remaining >= 0x40000000 && vaddr % 0x40000000 == 0 && paddr % 0x40000000 == 0 {
+                self.map_1g(vaddr, paddr, flags, addr_space)?;
+                vaddr += 0x40000000;
+                paddr += 0x40000000;
+            }
+            // if aligned to 2MB
+            else if remaining >= 0x200000 && vaddr % 0x200000 == 0 && paddr % 0x200000 == 0 {
+                self.map_2m(vaddr, paddr, flags, addr_space)?;
+                vaddr += 0x200000;
+                paddr += 0x200000;
+            } else {
+                self.map_4k(vaddr, paddr, flags, addr_space)?;
+                vaddr += 0x1000;
+                paddr += 0x1000;
+            }
+        }
+        Ok(from)
+    }
+
+    #[inline]
+    pub fn map_page(
         &self,
         from: VirtualAddress,
         to: PhysicalAddress,
@@ -249,9 +286,9 @@ impl<'a> Mmu<'a> {
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<VirtualAddress, MapError> {
         match options.size {
-            MapSize::Size4KB => self.map_4k(from, to, options, addr_space)?,
-            MapSize::Size2MB => self.map_2m(from, to, options, addr_space)?,
-            MapSize::Size1GB => self.map_1g(from, to, options, addr_space)?,
+            MapSize::Size4KB => self.map_4k(from, to, options.flags, addr_space)?,
+            MapSize::Size2MB => self.map_2m(from, to, options.flags, addr_space)?,
+            MapSize::Size1GB => self.map_1g(from, to, options.flags, addr_space)?,
         }
         Ok(from)
     }
@@ -260,9 +297,11 @@ impl<'a> Mmu<'a> {
         &self,
         from: VirtualAddress,
         to: PhysicalAddress,
-        options: MapOptions,
+        flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
+        assert!(from % 0x1000 == 0);
+        assert!(to % 0x1000 == 0);
         let l1 = if addr_space.is_user {
             addr_space.get_table_mut()
         } else {
@@ -274,13 +313,13 @@ impl<'a> Mmu<'a> {
                 })?
         };
         let entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
-        if options.force_remap() && entry.is_present() && entry.is_block() {
+        if flags.force_remap() && entry.is_present() && entry.is_block() {
             // if entry is a 1 GB block
             self.remap_block(entry, MapSize::Size1GB)?;
         }
         let l2 = self.create_next_table(entry)?;
         let entry = &mut l2[get_page_level_index(from, PageLevel::L2)];
-        if options.force_remap() && entry.is_present() && entry.is_block() {
+        if flags.force_remap() && entry.is_present() && entry.is_block() {
             // if entry is a 2 MB block
             self.remap_block(entry, MapSize::Size2MB)?;
         }
@@ -288,7 +327,7 @@ impl<'a> Mmu<'a> {
 
         let l3_entry = &mut l3[get_page_level_index(from, PageLevel::L3)];
 
-        if l3_entry.is_present() && !options.force_remap() {
+        if l3_entry.is_present() && !flags.force_remap() {
             return Err(MapError::AlreadyMapped);
         }
 
@@ -306,7 +345,7 @@ impl<'a> Mmu<'a> {
         &self,
         from: VirtualAddress,
         to: PhysicalAddress,
-        options: MapOptions,
+        flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
         let l1 = if addr_space.is_user {
@@ -320,7 +359,7 @@ impl<'a> Mmu<'a> {
                 })?
         };
         let entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
-        if options.force_remap() && entry.is_present() && entry.is_block() {
+        if flags.force_remap() && entry.is_present() && entry.is_block() {
             // if entry is a 1 GB block
             self.remap_block(entry, MapSize::Size1GB)?;
         }
@@ -328,7 +367,7 @@ impl<'a> Mmu<'a> {
 
         let l2_entry = &mut l2[get_page_level_index(from, PageLevel::L2)];
 
-        if l2_entry.is_present() && !options.force_remap() {
+        if l2_entry.is_present() && !flags.force_remap() {
             return Err(MapError::AlreadyMapped);
         }
 
@@ -346,7 +385,7 @@ impl<'a> Mmu<'a> {
         &self,
         from: VirtualAddress,
         to: PhysicalAddress,
-        options: MapOptions,
+        flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
         let l1 = if addr_space.is_user {
@@ -362,15 +401,15 @@ impl<'a> Mmu<'a> {
 
         let l1_entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
 
-        if l1_entry.is_present() && !options.force_remap() {
+        if l1_entry.is_present() && !flags.force_remap() {
             return Err(MapError::AlreadyMapped);
         }
 
         let l_attrib = LowerDescriptorAttributes::new()
-            .with_attr_index(options.flags.attr_index())
-            .with_shareability(options.flags.shareability())
-            .with_EL0_access(options.flags.el0_access())
-            .with_readonly(options.flags.read_only())
+            .with_attr_index(flags.attr_index())
+            .with_shareability(flags.shareability())
+            .with_EL0_access(flags.el0_access())
+            .with_readonly(flags.read_only())
             .with_access_flag(1);
         let u_attrib = UpperDescriptorAttributes::new();
         *l1_entry = TableEntry::create_block_descriptor(to, l_attrib, u_attrib);

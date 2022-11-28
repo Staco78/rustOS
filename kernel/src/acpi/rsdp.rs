@@ -92,7 +92,10 @@ impl Iterator for RsdtEntriesIterator {
     type Item = *const SdtHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.entries.get(self.index).map(|p| phys_to_virt(*p as usize) as *const SdtHeader);
+        let ptr = self
+            .entries
+            .get(self.index)
+            .map(|p| phys_to_virt(*p as usize) as *const SdtHeader);
         self.index += 1;
         ptr
     }
@@ -128,7 +131,7 @@ impl Iterator for XsdtEntriesIterator {
         if self.index >= self.length {
             return None;
         }
-        let ptr = unsafe { self.entries.add(self.index).read() };
+        let ptr = unsafe { self.entries.add(self.index).read_unaligned() };
         self.index += 1;
         Some(phys_to_virt(ptr as usize) as Self::Item)
     }

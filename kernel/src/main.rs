@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(incomplete_features)]
 #![feature(panic_info_message)]
 #![feature(strict_provenance)]
 #![feature(pointer_byte_offsets)]
@@ -8,6 +9,12 @@
 #![feature(cstr_from_bytes_until_nul)]
 #![feature(pointer_is_aligned)]
 #![feature(let_chains)]
+#![feature(trait_upcasting)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_write_slice)]
+#![feature(maybe_uninit_as_bytes)]
+#![feature(new_uninit)]
+#![feature(int_roundings)]
 
 mod acpi;
 mod cpu;
@@ -17,8 +24,10 @@ mod fs;
 mod interrupts;
 mod logger;
 mod memory;
+mod modules;
 mod psci;
 mod scheduler;
+mod symbols;
 mod timer;
 mod utils;
 
@@ -27,14 +36,13 @@ extern crate alloc;
 use core::{
     fmt::Write,
     mem::{self, MaybeUninit},
-    slice, ffi::CStr,
+    slice,
 };
 
 use acpi::AcpiParser;
 use cortex_a::registers::CurrentEL;
 use devices::pl011_uart;
 use interrupts::exceptions;
-use log::debug;
 use memory::PhysicalAddress;
 use scheduler::{current_process, thread::Thread, SCHEDULER};
 use tock_registers::interfaces::Readable;
@@ -50,7 +58,6 @@ use crate::{
 };
 
 pub static mut ACPI_TABLES: MaybeUninit<AcpiParser> = MaybeUninit::uninit();
-
 #[export_name = "start"]
 extern "C" fn main(
     config_tables_ptr: PhysicalAddress,
@@ -106,6 +113,7 @@ extern "C" fn main(
     };
     memory::init(memory_map);
     unsafe { fs::init(initrd_ptr, initrd_len) };
+    symbols::init();
     device_tree::load(dtb_ptr, dtb_len);
     psci::init();
     interrupts::init_chip(unsafe {
@@ -123,13 +131,7 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
-    let file = fs::open("/initrd/tt").expect("not found");
-    assert!(file.is_file());
-    let mut buff = [0; 60];
-    file.as_file().unwrap().read(0, &mut buff).unwrap();
-    let str = CStr::from_bytes_until_nul(&buff).unwrap();
-    debug!("{:?}", str);
-
+    modules::load("/initrd/hello.kmod").unwrap();
 
     Thread::new(current_process(), other_thread, false)
         .unwrap()

@@ -1,14 +1,15 @@
-use core::fmt::Display;
+use core::{fmt::Display, panic::PanicInfo};
 
 use cortex_a::{asm::wfi, registers::MPIDR_EL1};
 use log::error;
+use module::export;
 use static_assertions::assert_eq_size;
 use tock_registers::interfaces::Readable;
 
 use crate::interrupts::exceptions::disable_irqs;
 
 #[panic_handler]
-pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+pub fn panic_handler(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
         if let Some(message) = info.message() {
             error!(
@@ -29,6 +30,11 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     }
 
     halt();
+}
+
+#[export(panic)]
+fn module_panic(info: &PanicInfo) -> ! {
+    panic_handler(info)
 }
 
 pub fn halt() -> ! {

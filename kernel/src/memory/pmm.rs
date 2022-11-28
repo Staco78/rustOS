@@ -146,7 +146,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn is_used(&self, index: usize) -> bool {
         (self.bitmap[index / 8] & (0b10000000 >> (index % 8))) != 0
     }

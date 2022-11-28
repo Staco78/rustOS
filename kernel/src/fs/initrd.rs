@@ -63,13 +63,9 @@ impl<'a> Iterator for TarIterator<'a> {
         }
 
         self.pos += 512;
-
-        let mut size = header.size();
-        size &= !0xFF;
-        size += 512;
-
+        let size = header.size();
         let data = &self.data[self.pos..self.pos + size];
-
+        let size = size.next_multiple_of(512);
         self.pos += size;
         Some((header, data))
     }
@@ -93,16 +89,20 @@ impl<'a> FileNode for Node<'a> {
         self.data.len()
     }
 
-    fn read(&self, offset: usize, buff: &mut [u8]) -> Result<usize, ReadError> {
+    fn read<'b>(
+        &self,
+        offset: usize,
+        buff: &'b mut [MaybeUninit<u8>],
+    ) -> Result<&'b mut [u8], ReadError> {
         if offset >= self.size() {
-            return Ok(0);
+            return Ok(&mut []);
         }
         let to_read = (self.size() - offset).min(buff.len());
         let end = offset + to_read;
 
-        buff[..to_read].copy_from_slice(&self.data[offset..end]);
+        let buff = MaybeUninit::write_slice(&mut buff[..to_read], &self.data[offset..end]);
 
-        Ok(to_read)
+        Ok(buff)
     }
 
     fn write(&self, _: usize, _: &[u8]) -> Result<usize, WriteError> {
