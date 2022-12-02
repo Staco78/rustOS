@@ -362,7 +362,7 @@ impl Scheduler {
                 drop(threads_to_destroy); // unlock before going to sleep
             });
 
-            sleep(100_000_000); // 100 ms
+            sleep(1_000_000_000); // 1 s
         }
     }
 }
@@ -396,7 +396,7 @@ impl Cpu {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn current() -> &'static Cpu {
         let val = TPIDR_EL1.get();
         debug_assert!(val != 0, "Cpu not inited");

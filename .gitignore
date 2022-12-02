@@ -1,6 +1,7 @@
 /target
 QEMU_VARS.fd
 QEMU_CODE.fd
-symbols
+build/*
 initrd/*
 initrd.tar
+libs/module/src/defs.rs

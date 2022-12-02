@@ -19,7 +19,7 @@ LIBS_DIRS=$(shell find ./libs/ -maxdepth 1 -type d -not -path "./libs/")
 QEMU_FLAGS=-machine virt -cpu max \
         -drive if=pflash,format=raw,file=$(QEMU_CODE),readonly=on \
 		-drive if=pflash,format=raw,file=$(QEMU_VARS) \
-        -drive format=raw,file=fat:rw:`pwd`/root/$(RELEASE_PATH) \
+        -drive format=raw,file=fat:rw:`pwd`/root \
         -net none -monitor stdio -smp 4 -m 256 
 		# -net none -monitor stdio -smp 4 -m 256 -serial file:log 
 
@@ -35,23 +35,31 @@ build: kernel loader initrd.tar
 
 .PHONY: kernel
 kernel: 
-	cd kernel && RUSTFLAGS="-C link-args=--export-dynamic" cargo build $(CARGO_FLAGS) --target aarch64-kernel && cd ..
+	cd kernel && cargo build $(CARGO_FLAGS) --target aarch64-kernel && cd ..
+	aarch64-linux-gnu-objcopy -R "*exports" -R ".dyn*" target/aarch64-kernel/$(RELEASE_PATH)/kernel build/kernel
 
-.PHONY: symbols
-symbols: kernel $(MODULES)
-	nm -Dg root/$(RELEASE_PATH)/kernel | grep -f symbols | scripts/create_ksymbols.sh
+.PHONY: initrd/ksymbols
+initrd/ksymbols: kernel build/symbols
+	nm -Dg target/aarch64-kernel/$(RELEASE_PATH)/kernel | grep -f build/symbols | scripts/create_ksymbols.sh
+
+build/symbols: kernel
+	aarch64-linux-gnu-objcopy --dump-section .sym_exports=build/symbols target/aarch64-kernel/$(RELEASE_PATH)/kernel
+
+build/defs: kernel
+	aarch64-linux-gnu-objcopy --dump-section .defs_exports=build/defs target/aarch64-kernel/$(RELEASE_PATH)/kernel
 
 .PHONY: loader
 loader:
 	cd loader && cargo build $(CARGO_FLAGS) --target aarch64-unknown-uefi && cd ..
+	cp target/aarch64-unknown-uefi/$(RELEASE_PATH)/loader.efi build/boot.efi
 
 .PHONY: $(MODULES)
-$(MODULES):
+$(MODULES): build/defs
 	cd modules/$(basename $(@F)) && cargo build $(CARGO_FLAGS) --target aarch64-modules && cd ../..
 	cp target/aarch64-modules/$(RELEASE_PATH)/lib$(basename $(@F)).so initrd/$(@F)
 
 .PHONY: initrd.tar
-initrd.tar: symbols $(MODULES)
+initrd.tar: initrd/ksymbols $(MODULES)
 	@echo creating initrd...
 	$(shell cd initrd && tar -cf ../initrd.tar * -H gnu --no-xattrs && cd ..)
 

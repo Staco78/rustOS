@@ -1,24 +1,24 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/defs.rs");
-    let file = fs::read_to_string("src/defs.rs").unwrap();
-    let mut symbols_file = OpenOptions::new()
+    if option_env!("CARGO_FEATURE_kernel").is_some() {
+        return;
+    }
+    println!("cargo:rerun-if-changed=../../build/defs");
+    let symbols = fs::read_to_string("../../build/defs").unwrap();
+
+    let mut defs_file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open("../../symbols")
+        .open("src/defs.rs")
         .unwrap();
-    let lines = file.lines();
-    for line in lines {
-        let line = line.trim();
-        if line.starts_with("pub fn") {
-            let name_end = line.find('(').unwrap();
-            let symbol_name = &line[7..name_end];
-            writeln!(symbols_file, "{}", symbol_name).unwrap();
-        }
-    }
+    writeln!(defs_file, "extern \"Rust\" {{{}}}", symbols).unwrap();
+    defs_file.sync_data().unwrap();
+    Command::new("rustfmt")
+        .args(["--unstable-features", "--skip-children", "src/defs.rs"])
+        .output()
+        .unwrap();
 }

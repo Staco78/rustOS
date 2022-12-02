@@ -26,8 +26,20 @@ SECTIONS {
         *(.bss .bss.*)
     }
 
-    .dynsym ALIGN(4K) : { *(.dynsym) }
-    .dynstr : { *(.dynstr) }
+    .dynsym ALIGN(4K) (INFO) : { *(.dynsym) }
+    .dynstr (INFO) : { *(.dynstr) }
+    
+    .defs_exports (INFO) : 
+    {
+         *(.defs_exports)
+         KEEP(*(.defs_exports))
+    }
+
+     .sym_exports (INFO) : 
+    {
+         *(.sym_exports)
+         KEEP(*(.sym_exports))
+    }
 
     /DISCARD/ : { *(.comment) }
     /DISCARD/ : { *(.note.GNU-STACK) }

@@ -1,6 +1,6 @@
 use core::fmt::Write;
 
-use log::{Level, Log};
+use log::Level;
 use module::export;
 use spin::lock_api::Mutex;
 
@@ -13,9 +13,11 @@ pub struct KernelLogger {
 static LOGGER: KernelLogger = KernelLogger {
     lock: Mutex::new(()),
 };
+#[export]
+static KERNEL_LOGGER: &'static dyn log::Log = &LOGGER;
+
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
-// const TARGET_BLACKLIST_TRACE: &[&str] = &[];
 const TARGET_BLACKLIST_TRACE: &[&str] = &[
     "pmm",
     "vmm",
@@ -104,8 +106,3 @@ pub fn set_output(output: &'static mut dyn Write) {
 #[cfg(feature = "qemu_debug")]
 static mut QEMU_OUTPUT: crate::devices::pl011_uart::Pl011 =
     crate::devices::pl011_uart::Pl011::new(crate::memory::vmm::phys_to_virt(0x9000000));
-
-#[export(get_logger)]
-fn module_get_logger() -> &'static dyn Log {
-    &LOGGER
-}

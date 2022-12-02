@@ -6,7 +6,7 @@
         "name": "debug kernel",
         "type": "cppdbg",
         "request": "launch",
-        "program": "${workspaceFolder}/root/debug/kernel",
+        "program": "${workspaceFolder}/root/kernel",
         "miDebuggerServerAddress": "localhost:1234",
         "cwd": "${workspaceFolder}",
         "miDebuggerPath": "/usr/bin/aarch64-linux-gnu-gdb",
@@ -17,7 +17,7 @@
 
         "customLaunchSetupCommands": [
             {
-                "text": "file \"${workspaceFolder}/root/debug/kernel\""
+                "text": "file \"${workspaceFolder}/root/kernel\""
             },
             {
                 "text": "target remote :1234",

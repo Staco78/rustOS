@@ -3,10 +3,16 @@
 #[cfg(not(feature = "kernel"))]
 mod defs;
 #[cfg(not(feature = "kernel"))]
+mod heap;
+
+#[cfg(not(feature = "kernel"))]
 pub use defs::*;
 
 #[cfg(not(feature = "kernel"))]
 pub use modules_macros::module;
+
+#[cfg(not(feature = "kernel"))]
+pub extern crate alloc;
 
 #[cfg(feature = "kernel")]
 pub use modules_macros::export;
@@ -24,6 +30,6 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 #[cfg(not(feature = "kernel"))]
 #[no_mangle]
 fn __module_pre_init() {
-    log::set_logger(unsafe { get_logger() }).unwrap();
+    let _ = log::set_logger(unsafe { KERNEL_LOGGER });
     log::set_max_level(log::STATIC_MAX_LEVEL);
 }

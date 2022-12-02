@@ -5,7 +5,6 @@ use core::{
 };
 
 use cortex_a::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1, VBAR_EL1};
-use funcs::current_process;
 use log::{info, trace};
 use tock_registers::interfaces::Readable;
 
@@ -18,8 +17,10 @@ use crate::{
         PAGE_SIZE,
     },
     psci,
-    scheduler::{funcs, thread::Thread, SCHEDULER},
+    scheduler::SCHEDULER,
 };
+
+use super::exit;
 
 global_asm!(include_str!("ap_start.S"));
 
@@ -142,10 +143,5 @@ extern "C" fn ap_main(id: u32) -> ! {
 }
 
 fn up() -> ! {
-    Thread::new(current_process(), a, false).unwrap().start();
-    loop {}
-}
-
-fn a() -> ! {
-    loop {}
+    exit(0);
 }

@@ -4,32 +4,37 @@ use log::trace;
 use spin::lock_api::Mutex;
 use static_assertions::{assert_eq_align, assert_eq_size};
 
-use crate::utils::byte_size::ByteSize;
+use crate::utils::{byte_size::ByteSize, sync_once_cell::SyncOnceCell};
 
 use super::{constants::PAGE_SIZE, PageAllocator};
 
 const MIN_PAGE_COUNT: usize = 16; // minimum page count to alloc from page allocator
 
 pub struct Allocator<'a> {
-    page_allocator: Option<&'a dyn PageAllocator>,
+    page_allocator: SyncOnceCell<&'a dyn PageAllocator>,
     head: Mutex<*mut ChunkHeader>,
 }
+
+unsafe impl<'a> Sync for Allocator<'a> {}
+unsafe impl<'a> Send for Allocator<'a> {}
 
 impl<'a> Allocator<'a> {
     pub const fn new() -> Self {
         Self {
-            page_allocator: None,
+            page_allocator: SyncOnceCell::new(),
             head: Mutex::new(ptr::null_mut()),
         }
     }
 
-    pub unsafe fn init(&mut self, page_allocator: &'a dyn PageAllocator) {
-        self.page_allocator = Some(page_allocator);
+    pub unsafe fn init(&self, page_allocator: &'a dyn PageAllocator) {
+        self.page_allocator.set(page_allocator).expect("Allocator already initialized");
     }
 
     #[inline]
     fn page_allocator(&self) -> &'a dyn PageAllocator {
-        self.page_allocator
+        *self
+            .page_allocator
+            .get()
             .expect("Heap allocator used before init")
     }
 

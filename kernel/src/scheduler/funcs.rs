@@ -15,6 +15,7 @@ pub fn current_thread() -> &'static ThreadRef {
 }
 
 #[inline]
+#[allow(unused)]
 pub fn current_process() -> &'static ProcessRef {
     current_thread().process()
 }

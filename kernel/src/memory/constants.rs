@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use core::{mem::size_of, ops::Range};
 
 pub const PAGE_SHIFT: usize = 12;

@@ -33,7 +33,7 @@ pub fn panic_handler(info: &PanicInfo) -> ! {
 }
 
 #[export(panic)]
-fn module_panic(info: &PanicInfo) -> ! {
+fn module_panic(info: &core::panic::PanicInfo) -> ! {
     panic_handler(info)
 }
 

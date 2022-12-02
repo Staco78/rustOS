@@ -2,7 +2,7 @@ use core::{mem::transmute, slice};
 
 use alloc::vec::Vec;
 use elf::{
-    abi::{PF_W, PT_LOAD, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE, SHT_RELA},
+    abi::{PF_W, PT_LOAD, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE, SHT_RELA, R_AARCH64_GLOB_DAT},
     endian::LittleEndian,
     ElfBytes,
 };
@@ -12,9 +12,8 @@ use module::Module;
 use crate::{
     fs::{open, ReadError},
     memory::{
-        round_to_page_size,
         vmm::{vmm, AllocError, FindSpaceError, MapFlags, MemoryUsage},
-        AddrSpaceSelector, PAGE_SHIFT,
+        AddrSpaceSelector, PAGE_SHIFT, PAGE_SIZE,
     },
     symbols,
 };
@@ -91,7 +90,7 @@ impl<'a> Loader<'a> {
         for segment in segments {
             alloc_size = alloc_size.max((segment.p_vaddr + segment.p_memsz) as usize);
         }
-        let page_count = round_to_page_size(alloc_size) >> PAGE_SHIFT;
+        let page_count = alloc_size.next_multiple_of(PAGE_SIZE) >> PAGE_SHIFT;
         let base_addr = vmm().find_free_pages(
             page_count,
             MemoryUsage::ModuleSpace,
@@ -109,7 +108,7 @@ impl<'a> Loader<'a> {
                     let file_size = segment.p_filesz as usize;
                     debug_assert!(mem_size >= file_size);
                     let alloc_size = mem_size + (mem_off + base_addr - alloc_addr);
-                    let page_count = round_to_page_size(alloc_size) >> PAGE_SHIFT;
+                    let page_count = alloc_size.next_multiple_of(PAGE_SIZE) >> PAGE_SHIFT;
                     let flags = MapFlags::default_rw(segment.p_flags & PF_W == 0);
                     vmm().alloc_pages_at_addr(
                         alloc_addr,
@@ -175,7 +174,7 @@ impl<'a> Loader<'a> {
                 let symbol = &symbols[rela.r_sym as usize];
                 let relocation_place: *mut () = (base_addr as u64 + rela.r_offset) as *mut _;
                 match rela.r_type {
-                    R_AARCH64_JUMP_SLOT => {
+                    R_AARCH64_JUMP_SLOT | R_AARCH64_GLOB_DAT => {
                         // S + A
                         unsafe {
                             *(relocation_place as *mut u64) = symbol

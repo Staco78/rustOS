@@ -168,6 +168,7 @@ impl ThreadRef {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn start(self) {
         SCHEDULER.add_thread(self);
     }

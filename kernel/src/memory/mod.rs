@@ -1,6 +1,9 @@
+use core::fmt::Debug;
+
 use crate::{memory::mmu::invalidate_tlb_all, utils::sync_once_cell::SyncOnceCell};
 use cortex_a::registers::TTBR0_EL1;
 use log::info;
+use module::export;
 use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
 
@@ -21,7 +24,9 @@ pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
 
 #[global_allocator]
-static mut ALLOCATOR: heap::Allocator = heap::Allocator::new();
+static ALLOCATOR: heap::Allocator = heap::Allocator::new();
+#[export]
+static KERNEL_ALLOCATOR: &'static (dyn core::alloc::GlobalAlloc + Sync) = &ALLOCATOR;
 pub static PMM_PAGE_ALLOCATOR: SyncOnceCell<PmmPageAllocator> = SyncOnceCell::new();
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
@@ -55,12 +60,7 @@ pub enum CustomMemoryTypes {
     Initrd = 0x80000004,
 }
 
-pub trait PageAllocator: Sync {
+pub trait PageAllocator: Sync + Debug {
     unsafe fn alloc(&self, count: usize) -> *mut u8;
     unsafe fn dealloc(&self, ptr: usize, count: usize);
-}
-
-#[inline]
-pub const fn round_to_page_size(x: usize) -> usize {
-    ((x + PAGE_SIZE - 1) >> PAGE_SHIFT) << PAGE_SHIFT
 }

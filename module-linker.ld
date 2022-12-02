@@ -9,18 +9,15 @@ SECTIONS {
         *(.plt)
     }
 
-    .got ALIGN(4K) :
-    {
-        *(.got.*)
-    }
-
     .rodata ALIGN(4K) :
     {
         *(.rodata .rodata.*)
     }
 
-    .dynsym : { *(.dynsym) }
-    .dynstr : { *(.dynstr) }
+    .got ALIGN(4K) :
+    {
+        *(.got.*)
+    }
 
     .data ALIGN(4K) :
     {
@@ -31,6 +28,10 @@ SECTIONS {
     {
         *(.bss .bss.*)
     }
+
+    .dynsym (INFO) : { *(.dynsym) }
+    .dynstr (INFO) : { *(.dynstr) }
+    .rela (INFO) : { *(.rela.*) }
 
     /DISCARD/ : { *(.comment) }
     /DISCARD/ : { *(.note.GNU-STACK) }

@@ -16,7 +16,8 @@
     "pre-link-args": {
     	"ld.lld": [
 	   	 "--gc-sections",
-		 "--script=linker.ld"
+		 "--script=linker.ld",
+         "--export-dynamic"
     	]
     }
 }
