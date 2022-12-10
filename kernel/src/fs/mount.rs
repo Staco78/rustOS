@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
-use spin::lock_api::RwLock;
+
+use crate::utils::no_irq_locks::NoIrqRwLock;
 
 use super::vfs::FileOrDir;
 
@@ -9,7 +10,7 @@ pub struct MountPoint {
     pub node: FileOrDir<'static>,
 }
 
-static MOUNTPOINTS: RwLock<Vec<MountPoint>> = RwLock::new(Vec::new());
+static MOUNTPOINTS: NoIrqRwLock<Vec<MountPoint>> = NoIrqRwLock::new(Vec::new());
 
 pub fn mount(path: &'static str, node: FileOrDir<'static>) {
     let mut mountpoints = MOUNTPOINTS.write();

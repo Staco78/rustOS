@@ -1,14 +1,17 @@
 use core::{
     arch::asm,
-    cell::{SyncUnsafeCell, UnsafeCell},
+    cell::SyncUnsafeCell,
     mem::MaybeUninit,
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use alloc::{collections::VecDeque, vec::Vec};
-use cortex_a::{asm, registers::TPIDR_EL1};
+use cortex_a::{
+    asm,
+    registers::{DAIF, TPIDR_EL1},
+};
 use crossbeam_utils::atomic::AtomicCell;
 use log::{info, trace};
-use spin::lock_api::{Mutex, RwLock};
 use static_assertions::const_assert;
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -17,12 +20,12 @@ use crate::{
     device_tree,
     interrupts::interrupts::{self, CoreSelection},
     memory::vmm,
-    no_irq,
     scheduler::{
         process::Process,
         thread::{Thread, ThreadEntry},
     },
     timer,
+    utils::no_irq_locks::{NoIrqMutex, NoIrqRwLock},
 };
 
 use self::{
@@ -46,6 +49,15 @@ extern "C" {
     fn exception_exit(frame: *mut InterruptFrame) -> !;
 }
 
+static DUMMY_CPU: Cpu = Cpu {
+    id: 0,
+    is_main_cpu: true,
+    current_thread: SyncUnsafeCell::new(None),
+    idle_thread: None,
+    threads: None,
+    irqs_depth: AtomicU32::new(1),
+};
+
 pub static SCHEDULER: Scheduler = Scheduler::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,10 +72,10 @@ pub struct Scheduler {
     state: AtomicCell<SchedulerState>,
     kernel_process: SyncUnsafeCell<Option<ProcessRef>>,
 
-    threads_to_destroy: Mutex<Vec<ThreadRef>>,
+    threads_to_destroy: NoIrqMutex<Vec<ThreadRef>>,
     thread_destroyer_of_threads: SyncUnsafeCell<Option<ThreadRef>>,
 
-    waiting_threads: SyncUnsafeCell<MaybeUninit<RwLock<VecDeque<ThreadRef>>>>,
+    waiting_threads: SyncUnsafeCell<MaybeUninit<NoIrqRwLock<VecDeque<ThreadRef>>>>,
 }
 
 unsafe impl Send for Scheduler {}
@@ -76,7 +88,7 @@ impl Scheduler {
             state: AtomicCell::new(SchedulerState::Initing),
             kernel_process: SyncUnsafeCell::new(None),
 
-            threads_to_destroy: Mutex::new(Vec::new()),
+            threads_to_destroy: NoIrqMutex::new(Vec::new()),
             thread_destroyer_of_threads: SyncUnsafeCell::new(None),
 
             waiting_threads: SyncUnsafeCell::new(MaybeUninit::uninit()),
@@ -88,7 +100,7 @@ impl Scheduler {
         let kernel_process_ = unsafe { &mut *self.kernel_process.get() };
 
         assert!(self.state.load() == SchedulerState::Initing);
-        assert!(kernel_process_.is_none());
+        debug_assert!(kernel_process_.is_none());
 
         let kernel_addr_space = vmm::create_current_kernel_addr_space();
         let kernel_process = Process::new(kernel_addr_space).into_ref();
@@ -102,7 +114,7 @@ impl Scheduler {
         .expect("Unable to create the thread destroyer of threads");
         unsafe {
             *self.thread_destroyer_of_threads.get() = Some(thread_destroyer_of_threads);
-            *self.waiting_threads.get() = MaybeUninit::new(RwLock::new(VecDeque::new()));
+            *self.waiting_threads.get() = MaybeUninit::new(NoIrqRwLock::new(VecDeque::new()));
         }
 
         interrupts::set_irq_handler(0, Self::yield_handler);
@@ -129,7 +141,7 @@ impl Scheduler {
     }
 
     #[inline]
-    fn waiting_threads(&self) -> &RwLock<VecDeque<ThreadRef>> {
+    fn waiting_threads(&self) -> &NoIrqRwLock<VecDeque<ThreadRef>> {
         unsafe { (*self.waiting_threads.get()).assume_init_ref() }
     }
 
@@ -145,17 +157,15 @@ impl Scheduler {
     }
 
     // call this on each core
-    pub fn start(&self, cpu_id: u32, entry: ThreadEntry) -> ! {
+    pub fn start(&self, entry: ThreadEntry) -> ! {
         assert!(self.state.load() == SchedulerState::Initing);
-
-        assert!(cpu_id == cpu::id());
 
         // use a scope here bc rust doesn't drop variables when calling a never return function
         let thread_to_run = {
             let cpu = self
                 .cpus()
                 .iter()
-                .find(|c| c.id == cpu_id)
+                .find(|c| c.id == cpu::id())
                 .expect("Cpu not registered");
             unsafe { Cpu::set_current(cpu) };
 
@@ -171,10 +181,10 @@ impl Scheduler {
             timer::init_core();
             self.state.store(SchedulerState::Started);
 
-            cpu.idle_thread().atomic_state().store(ThreadState::Running);
-            cpu.set_current_thread(cpu.idle_thread().clone());
+            thread.atomic_state().store(ThreadState::Running);
+            cpu.set_current_thread(thread.clone());
 
-            if cpu_id == device_tree::get_boot_cpu_id() {
+            if cpu::id() == device_tree::get_boot_cpu_id() {
                 self.add_thread(
                     unsafe { &*self.thread_destroyer_of_threads.get() }
                         .as_ref()
@@ -192,6 +202,8 @@ impl Scheduler {
         unsafe {
             let context = thread_to_run.read().saved_context();
             drop(thread_to_run);
+            let r = Cpu::current().irqs_depth.fetch_sub(1, Ordering::Relaxed);
+            debug_assert_eq!(r, 1);
             exception_exit(context)
         }
     }
@@ -218,7 +230,7 @@ impl Scheduler {
 
         self.wake_up_waiting_threads();
 
-        let mut threads = cpu.threads.lock();
+        let mut threads = cpu.threads().lock();
 
         if can_rerun {
             threads.push_back(current_thread.clone());
@@ -281,7 +293,7 @@ impl Scheduler {
     }
 
     fn wake_up_waiting_threads(&self) {
-        let mut runnable_threads = Cpu::current().threads.lock();
+        let mut runnable_threads = Cpu::current().threads().lock();
         let mut waiting_threads = self.waiting_threads().write();
         let uptime = timer::uptime_ns();
         while let Some(thread) = waiting_threads.front() {
@@ -300,13 +312,10 @@ impl Scheduler {
     }
 
     pub(in crate::scheduler) fn add_thread(&self, thread: ThreadRef) {
-        no_irq!({
-            assert!(thread.state() == ThreadState::Runnable);
-            let cpu = Cpu::current();
-            let mut threads = cpu.threads.lock();
-            threads.push_back(thread);
-            self.config_timer(threads.len());
-        });
+        assert!(thread.state() == ThreadState::Runnable);
+        let cpu = Cpu::current();
+        let mut threads = cpu.threads().lock();
+        threads.push_back(thread);
     }
 
     #[inline]
@@ -326,10 +335,18 @@ impl Scheduler {
             },
             "CPU should be in EL1t to yield"
         );
+        debug_assert_eq!(
+            Cpu::current()
+                .irqs_depth
+                .load(core::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        debug_assert_eq!(DAIF.get(), 0);
         interrupts::chip().send_sgi(CoreSelection::Me, 0);
     }
 
     fn yield_handler(_frame: *mut InterruptFrame) -> *mut InterruptFrame {
+        debug_assert!(Cpu::current().irqs_depth.load(Ordering::Relaxed) > 0);
         let thread = SCHEDULER.schedule();
         let thread = thread.read();
         let context = thread.saved_context();
@@ -340,27 +357,25 @@ impl Scheduler {
     fn thread_destroyer_of_threads() -> ! {
         let scheduler = &SCHEDULER;
         loop {
-            no_irq!({
-                let mut threads_to_destroy = scheduler.threads_to_destroy.lock();
-                for thread in threads_to_destroy.iter() {
-                    let mut process = thread.process().write();
-                    let remove_index = process
-                        .threads
-                        .iter()
-                        .enumerate()
-                        .find(|e| e.1.id() == thread.id())
-                        .unwrap()
-                        .0;
-                    process.threads.swap_remove(remove_index);
+            let mut threads_to_destroy = scheduler.threads_to_destroy.lock();
+            for thread in threads_to_destroy.iter() {
+                let mut process = thread.process().write();
+                let remove_index = process
+                    .threads
+                    .iter()
+                    .enumerate()
+                    .find(|e| e.1.id() == thread.id())
+                    .unwrap()
+                    .0;
+                process.threads.swap_remove(remove_index);
 
-                    if process.threads.is_empty() {
-                        todo!("destroy process");
-                    }
+                if process.threads.is_empty() {
+                    todo!("destroy process");
                 }
-                threads_to_destroy.clear(); // drop all threads
+            }
+            threads_to_destroy.clear(); // drop all threads
 
-                drop(threads_to_destroy); // unlock before going to sleep
-            });
+            drop(threads_to_destroy); // unlock before going to sleep
 
             sleep(1_000_000_000); // 1 s
         }
@@ -376,11 +391,12 @@ fn idle_thread() -> ! {
 // each core has a ptr to its own Cpu struct in TPIDR_EL1
 #[derive(Debug)]
 pub struct Cpu {
-    id: u32,
-    is_main_cpu: bool,
-    threads: Mutex<VecDeque<ThreadRef>>,
+    pub id: u32,
+    pub is_main_cpu: bool,
+    threads: Option<NoIrqMutex<VecDeque<ThreadRef>>>,
     idle_thread: Option<ThreadRef>,
-    current_thread: UnsafeCell<Option<ThreadRef>>,
+    current_thread: SyncUnsafeCell<Option<ThreadRef>>,
+    pub irqs_depth: AtomicU32,
 }
 
 const_assert!(AtomicCell::<Option<ThreadRef>>::is_lock_free());
@@ -390,16 +406,26 @@ impl Cpu {
         Self {
             id,
             is_main_cpu,
-            threads: Default::default(),
+            threads: Some(Default::default()),
             idle_thread: None,
-            current_thread: UnsafeCell::new(None),
+            current_thread: SyncUnsafeCell::new(None),
+            irqs_depth: 1.into(),
         }
+    }
+
+    #[inline(always)]
+    pub fn threads(&self) -> &NoIrqMutex<VecDeque<ThreadRef>> {
+        self.threads
+            .as_ref()
+            .expect("Called threads() on a dummy CPU")
     }
 
     #[inline(always)]
     pub fn current() -> &'static Cpu {
         let val = TPIDR_EL1.get();
-        debug_assert!(val != 0, "Cpu not inited");
+        if val == 0 {
+            return &DUMMY_CPU;
+        }
 
         unsafe { (val as *const Cpu).as_ref().unwrap_unchecked() }
     }

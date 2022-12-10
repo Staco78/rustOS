@@ -60,7 +60,6 @@ pub fn tick_in_ns(ns: u64) {
 
 pub fn tick_at_ns(ns: u64) {
     trace!(target: "timer", "Tick at {ns} ns");
-    // assert!(ns > uptime_ns());
     CNTP_CTL_EL0.modify(CNTP_CTL_EL0::IMASK::CLEAR);
     let ticks = (ns as f64 / ns_per_tick()) as u64;
     CNTP_CVAL_EL0.set(ticks);

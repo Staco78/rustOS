@@ -2,16 +2,15 @@ use core::fmt::Write;
 
 use log::Level;
 use module::export;
-use spin::lock_api::Mutex;
 
-use crate::cpu;
+use crate::{cpu, utils::no_irq_locks::NoIrqMutex};
 
 pub struct KernelLogger {
-    lock: Mutex<()>,
+    lock: NoIrqMutex<()>,
 }
 
 static LOGGER: KernelLogger = KernelLogger {
-    lock: Mutex::new(()),
+    lock: NoIrqMutex::new(()),
 };
 #[export]
 static KERNEL_LOGGER: &'static dyn log::Log = &LOGGER;

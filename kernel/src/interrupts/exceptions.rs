@@ -1,10 +1,13 @@
-use core::{arch::global_asm, fmt::Display};
+use core::{arch::global_asm, fmt::Display, num::NonZeroU8, sync::atomic::Ordering};
 
 use cortex_a::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
 use log::{error, info};
 use tock_registers::interfaces::{Readable, Writeable};
 
-use crate::cpu::{self, InterruptFrame};
+use crate::{
+    cpu::{self, InterruptFrame},
+    scheduler::Cpu,
+};
 
 #[derive(Debug)]
 enum CpuException {
@@ -122,8 +125,6 @@ extern "C" {
 }
 
 pub fn init() {
-    enable_irqs();
-
     // set vector table
     unsafe { VBAR_EL1.set((&vector_table as *const ()).addr() as u64) };
 
@@ -143,26 +144,67 @@ extern "C" fn interrupt_print(i: u32) {
     panic!("Received unwanted interrupt from vector {i}");
 }
 
-// return the value of the DAIF register before modification
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+pub struct IrqState(NonZeroU8);
+
+impl IrqState {
+    #[inline(always)]
+    fn from_u64(v: u64) -> Self {
+        debug_assert!(<u64 as TryInto<u8>>::try_into(v >> 6).is_ok());
+        Self(unsafe { NonZeroU8::new_unchecked((v >> 6) as u8 | 1 << 7) })
+    }
+
+    #[inline(always)]
+    fn into_u64(self) -> u64 {
+        ((self.0.get() & 0x7F) << 6) as u64
+    }
+}
+
+/// return the value of the DAIF register before modification
 #[inline]
-pub fn disable_irqs() -> u64 {
+pub fn disable_irqs() -> IrqState {
     let v = DAIF.get();
     DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
-    v
+    IrqState::from_u64(v)
 }
 
-// return the value of the DAIF register before modification
+/// return the value of the DAIF register before modification
 #[inline]
-pub fn enable_irqs() -> u64 {
+pub fn enable_irqs() -> IrqState {
     let v = DAIF.get();
     DAIF.write(DAIF::D::Unmasked + DAIF::A::Unmasked + DAIF::I::Unmasked + DAIF::F::Unmasked);
-    v
+    IrqState::from_u64(v)
 }
 
-// safety: v should come from disable_irqs()
+/// restore irqs from an IrqState
 #[inline]
-pub unsafe fn restore_irqs(v: u64) {
-    DAIF.set(v)
+#[allow(unused)]
+pub fn restore_irqs(v: IrqState) {
+    DAIF.set(v.into_u64())
+}
+
+/// Disable irqs with depth level storage method
+/// In depth level storage method, each CPU store
+/// the number of times `disable_irqs_depth()` was called more than `restore_irqs_depth()`
+#[inline]
+pub fn disable_irqs_depth() {
+    let cpu = Cpu::current();
+    let depth = cpu.irqs_depth.fetch_add(1, Ordering::Relaxed);
+    // debug!("disable_irqs_depth: {}", depth + 1);
+    if depth == 0 {
+        disable_irqs();
+    }
+}
+
+#[inline]
+pub fn restore_irqs_depth() {
+    let cpu = Cpu::current();
+    let depth = cpu.irqs_depth.fetch_sub(1, Ordering::Relaxed);
+    // debug!("restore_irqs_depth: {}", depth - 1);
+    if depth == 1 {
+        enable_irqs();
+    }
 }
 
 #[macro_export]
@@ -170,6 +212,6 @@ macro_rules! no_irq {
     ($inner:block) => {{
         let __daif_value = $crate::exceptions::disable_irqs();
         $inner;
-        unsafe { crate::exceptions::restore_irqs(__daif_value) };
+        crate::exceptions::restore_irqs(__daif_value);
     }};
 }

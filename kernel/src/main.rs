@@ -40,7 +40,7 @@ use core::{
 };
 
 use acpi::AcpiParser;
-use cortex_a::registers::CurrentEL;
+use cortex_a::registers::{CurrentEL, DAIF};
 use devices::pl011_uart;
 use interrupts::exceptions;
 use memory::PhysicalAddress;
@@ -76,6 +76,12 @@ extern "C" fn main(
             .unwrap()
             == CurrentEL::EL::Value::EL1
     );
+    assert!(
+        DAIF.is_set(DAIF::D)
+            && DAIF.is_set(DAIF::A)
+            && DAIF.is_set(DAIF::I)
+            && DAIF.is_set(DAIF::F)
+    ); // assert expections are disabled
     exceptions::init();
 
     let config_tables = unsafe {
@@ -124,9 +130,9 @@ extern "C" fn main(
     });
 
     {
-        let my_id = scheduler::register_cpus();
+        scheduler::register_cpus();
         SCHEDULER.init(); // will start other cores
-        SCHEDULER.start(my_id, later_main);
+        SCHEDULER.start(later_main);
     }
 }
 

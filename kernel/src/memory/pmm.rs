@@ -1,17 +1,16 @@
-use crate::utils::byte_size::ByteSize;
+use crate::utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex};
 
 use super::{
     constants::PAGE_SIZE, vmm::phys_to_virt, CustomMemoryTypes, PageAllocator, PhysicalAddress,
 };
 use core::{fmt::Debug, ptr, slice};
 use log::{error, trace};
-use spin::lock_api::Mutex;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
-pub static mut PHYSICAL_MANAGER: Option<Mutex<PhysicalMemoryManager>> = None;
+pub static mut PHYSICAL_MANAGER: Option<NoIrqMutex<PhysicalMemoryManager>> = None;
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {
-    unsafe { PHYSICAL_MANAGER = Some(Mutex::new(PhysicalMemoryManager::new(memory_map))) };
+    unsafe { PHYSICAL_MANAGER = Some(NoIrqMutex::new(PhysicalMemoryManager::new(memory_map))) };
 }
 
 pub struct PhysicalMemoryManager {
@@ -220,11 +219,11 @@ pub enum PhysicalAllocError {
 }
 
 pub struct PmmPageAllocator<'a> {
-    pmm: &'a Mutex<PhysicalMemoryManager>,
+    pmm: &'a NoIrqMutex<PhysicalMemoryManager>,
 }
 
 impl<'a> PmmPageAllocator<'a> {
-    pub fn new(pmm: &'a Mutex<PhysicalMemoryManager>) -> Self {
+    pub fn new(pmm: &'a NoIrqMutex<PhysicalMemoryManager>) -> Self {
         Self { pmm }
     }
 }

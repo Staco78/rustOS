@@ -18,7 +18,7 @@ use crate::{
 use super::{
     consts::{KERNEL_STACK_PAGE_COUNT, USER_STACK_PAGE_COUNT},
     process::ProcessRef,
-    sync_ref::SyncRef, SCHEDULER,
+    sync_ref::SyncRef, SCHEDULER, Cpu,
 };
 
 pub type ThreadId = usize;
@@ -131,7 +131,7 @@ impl Thread {
 
     #[inline]
     pub fn saved_context(&self) -> *mut InterruptFrame {
-        assert!(self.kernel_stack != 0);
+        debug_assert!(self.kernel_stack != 0);
         self.kernel_stack as *mut InterruptFrame
     }
 }
@@ -171,6 +171,7 @@ impl ThreadRef {
     #[allow(unused)]
     pub fn start(self) {
         SCHEDULER.add_thread(self);
+        SCHEDULER.config_timer(Cpu::current().threads().lock().len());
     }
 }
 

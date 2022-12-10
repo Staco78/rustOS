@@ -1,6 +1,6 @@
 use log::trace;
 
-use crate::{no_irq, scheduler::SCHEDULER, timer};
+use crate::{scheduler::SCHEDULER, timer};
 
 use super::{
     process::ProcessRef,
@@ -21,17 +21,23 @@ pub fn current_process() -> &'static ProcessRef {
 }
 
 pub fn exit(code: isize) -> ! {
-    let cpu = Cpu::current();
-    let thread = cpu.current_thread();
-    assert!(thread.state() == ThreadState::Running);
-    thread.atomic_state().store(ThreadState::Exited);
+    {
+        let cpu = Cpu::current();
+        let thread = cpu.current_thread();
+        debug_assert!(thread.state() == ThreadState::Running);
+        thread.atomic_state().store(ThreadState::Exited);
 
-    trace!(target: "scheduler", "Thread {} of process {} exited with code {} on core {}", thread.id(), thread.process().id(), code, cpu.id);
+        trace!(target: "scheduler", "Thread {} of process {} exited with code {} on core {}", thread.id(), thread.process().id(), code, cpu.id);
 
-    no_irq!({
         SCHEDULER.threads_to_destroy.lock().push(thread.clone());
-    });
-
+        debug_assert_eq!(
+            Cpu::current()
+                .irqs_depth
+                .load(core::sync::atomic::Ordering::Relaxed),
+            0
+        );
+    }
+    
     yield_now();
     unreachable!()
 }
@@ -42,8 +48,8 @@ pub fn yield_now() {
 }
 
 pub fn sleep(ns: u64) {
-    let ns = timer::uptime_ns() + ns;
-    no_irq!({
+    {
+        let ns = timer::uptime_ns() + ns;
         let mut threads = SCHEDULER.waiting_threads().write();
         let r = threads.binary_search_by(|e| {
             let time = match e.state() {
@@ -58,7 +64,7 @@ pub fn sleep(ns: u64) {
             Ok(i) => threads.insert(i, thread),
             Err(i) => threads.insert(i, thread),
         };
-    });
+    }
 
     yield_now();
 }

@@ -7,7 +7,7 @@ use core::{
 use alloc::sync::Arc;
 use log::trace;
 
-use crate::{acpi::madt::Madt, cpu::InterruptFrame, devices::gic_v2::GenericInterruptController};
+use crate::{acpi::madt::Madt, cpu::InterruptFrame, devices::gic_v2::GenericInterruptController, scheduler::Cpu};
 
 pub trait InterruptsChip: Sync + Send {
     fn init(&self);
@@ -51,6 +51,9 @@ unsafe extern "C" fn interrupt_handler(frame: *mut InterruptFrame) -> *mut Inter
     let id = chip().get_current_intid();
     trace!(target: "interrupts", "Receive IRQ {}", id);
 
+    let irq_depth = Cpu::current().irqs_depth.fetch_add(1, Ordering::Relaxed);
+    debug_assert_eq!(irq_depth, 0);
+
     // spurious interrupt
     if id >= 1020 {
         return frame;
@@ -61,6 +64,11 @@ unsafe extern "C" fn interrupt_handler(frame: *mut InterruptFrame) -> *mut Inter
     let handler: Handler = mem::transmute(handler_ptr);
     let r = handler(frame);
     chip().end_of_interrupt(id);
+
+    let depth = Cpu::current().irqs_depth.fetch_sub(1, Ordering::Relaxed);
+    debug_assert_eq!(irq_depth, depth - 1);
+    debug_assert_eq!(depth, 1);
+
     r
 }
 

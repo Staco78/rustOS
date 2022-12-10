@@ -1,13 +1,14 @@
 use core::fmt::Debug;
 
 use alloc::sync::Arc;
-use spin::lock_api::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub struct SyncRef<T>(Arc<RwLock<T>>);
+use crate::utils::no_irq_locks::{NoIrqRwLock, RwLockWriteGuard, RwLockReadGuard};
+
+pub struct SyncRef<T>(Arc<NoIrqRwLock<T>>);
 
 impl<T> SyncRef<T> {
     pub fn new(data: T) -> Self {
-        Self(Arc::new(RwLock::new(data)))
+        Self(Arc::new(NoIrqRwLock::new(data)))
     }
 
     #[inline]

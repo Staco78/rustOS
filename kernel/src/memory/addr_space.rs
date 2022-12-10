@@ -4,7 +4,7 @@ use core::{
     slice,
 };
 
-use spin::lock_api::{Mutex, MutexGuard};
+use crate::utils::no_irq_locks::{NoIrqMutex, NoIrqMutexGuard};
 
 use super::{
     mmu::TableEntry,
@@ -66,18 +66,18 @@ impl Drop for VirtualAddressSpace {
 
 #[derive(Debug)]
 pub struct AddrSpaceLock {
-    inner: Mutex<VirtualAddressSpace>,
+    inner: NoIrqMutex<VirtualAddressSpace>,
 }
 
 impl AddrSpaceLock {
     pub fn new(data: VirtualAddressSpace) -> Self {
         Self {
-            inner: Mutex::new(data),
+            inner: NoIrqMutex::new(data),
         }
     }
 
     #[inline]
-    pub fn lock(&self) -> MutexGuard<VirtualAddressSpace> {
+    pub fn lock(&self) -> NoIrqMutexGuard<VirtualAddressSpace> {
         self.inner.lock()
     }
 
@@ -112,7 +112,7 @@ impl<'a> AddrSpaceSelector<'a> {
 }
 
 pub enum GuardInnerEnum<'a> {
-    Owned(MutexGuard<'a, VirtualAddressSpace>),
+    Owned(NoIrqMutexGuard<'a, VirtualAddressSpace>),
     Ref(&'a mut VirtualAddressSpace),
 }
 

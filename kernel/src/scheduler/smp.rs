@@ -41,13 +41,11 @@ where
     }
 }
 
-// return main core id
-pub fn register_cpus() -> u32 {
+pub fn register_cpus() {
     dt_iter_cpus(|id, _| {
         let is_main_cpu = id == device_tree::get_boot_cpu_id();
         SCHEDULER.register_cpu(id, is_main_cpu);
     });
-    device_tree::get_boot_cpu_id()
 }
 
 pub fn start_cpus() {
@@ -139,7 +137,7 @@ fn alloc_ap_stack() -> VirtualAddress {
 extern "C" fn ap_main(id: u32) -> ! {
     info!(target: "smp", "Core {id} online");
     interrupts::chip().init_ap();
-    SCHEDULER.start(id, up);
+    SCHEDULER.start(up);
 }
 
 fn up() -> ! {

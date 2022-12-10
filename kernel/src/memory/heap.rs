@@ -1,10 +1,9 @@
 use core::{alloc::GlobalAlloc, mem::size_of, ptr};
 
 use log::trace;
-use spin::lock_api::Mutex;
 use static_assertions::{assert_eq_align, assert_eq_size};
 
-use crate::utils::{byte_size::ByteSize, sync_once_cell::SyncOnceCell};
+use crate::utils::{byte_size::ByteSize, sync_once_cell::SyncOnceCell, no_irq_locks::NoIrqMutex};
 
 use super::{constants::PAGE_SIZE, PageAllocator};
 
@@ -12,7 +11,7 @@ const MIN_PAGE_COUNT: usize = 16; // minimum page count to alloc from page alloc
 
 pub struct Allocator<'a> {
     page_allocator: SyncOnceCell<&'a dyn PageAllocator>,
-    head: Mutex<*mut ChunkHeader>,
+    head: NoIrqMutex<*mut ChunkHeader>,
 }
 
 unsafe impl<'a> Sync for Allocator<'a> {}
@@ -22,7 +21,7 @@ impl<'a> Allocator<'a> {
     pub const fn new() -> Self {
         Self {
             page_allocator: SyncOnceCell::new(),
-            head: Mutex::new(ptr::null_mut()),
+            head: NoIrqMutex::new(ptr::null_mut()),
         }
     }
 
