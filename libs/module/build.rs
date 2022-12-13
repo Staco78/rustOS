@@ -1,9 +1,10 @@
+use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::process::Command;
 
 fn main() {
-    if option_env!("CARGO_FEATURE_kernel").is_some() {
+    if env::var("CARGO_FEATURE_KERNEL").is_ok() {
         return;
     }
     println!("cargo:rerun-if-changed=../../build/defs");

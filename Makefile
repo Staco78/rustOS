@@ -46,7 +46,8 @@ build/symbols: kernel
 	aarch64-linux-gnu-objcopy --dump-section .sym_exports=build/symbols target/aarch64-kernel/$(RELEASE_PATH)/kernel
 
 build/defs: kernel
-	aarch64-linux-gnu-objcopy --dump-section .defs_exports=build/defs target/aarch64-kernel/$(RELEASE_PATH)/kernel
+	aarch64-linux-gnu-objcopy --dump-section .defs_exports=build/defs_ target/aarch64-kernel/$(RELEASE_PATH)/kernel
+	diff build/defs build/defs_ || cp build/defs_ build/defs
 
 .PHONY: loader
 loader:
