@@ -146,6 +146,7 @@ impl PhysicalMemoryManager {
     }
 
     #[inline(always)]
+    #[allow(unused)]
     pub fn is_used(&self, index: usize) -> bool {
         (self.bitmap[index / 8] & (0b10000000 >> (index % 8))) != 0
     }
@@ -179,24 +180,109 @@ impl PhysicalMemoryManager {
         }
     }
 
-    fn find_pages(&self, count: usize) -> Result<usize, PhysicalAllocError> {
-        assert!(count > 0);
+    /// Find the byte index of the first byte which contains at least one 0 bit in the bitmap.
+    #[inline]
+    fn find_first_zero(bitmap: &[u8]) -> Option<usize> {
+        let (a, bitmap64, b) = unsafe { bitmap.align_to::<u64>() };
+
         let mut index = 0;
-        let mut size = 0;
-        for i in 0..(self.bitmap.len() * 8) {
-            if !self.is_used(i) {
-                if size == 0 {
-                    index = i;
-                }
-                size += 1;
-                if size == count {
-                    return Ok(index);
-                }
+        for val in a {
+            if *val != u8::MAX {
+                return Some(index);
+            }
+            index += 1;
+        }
+
+        for val in bitmap64 {
+            if *val != u64::MAX {
+                return Some(index + (u64::from_be(*val).leading_ones() / u8::BITS) as usize);
+            }
+            index += 8;
+        }
+        for val in b {
+            if *val != u8::MAX {
+                return Some(index);
+            }
+            index += 1;
+        }
+
+        None
+    }
+
+    /// Check if `count` pages are allocable in `bitmap`.
+    /// The alloc is possible if there is `count` contigous 0 bits with at
+    /// least 1 free bit in the first byte of the bitmap.
+    ///
+    /// `bitmap[0]` should contains at least 1 hole (0 bit).
+    ///
+    /// `offset` is the bit offset in `bitmap` where to start looking for alloc.
+    ///
+    /// If the alloc is possible, return `Ok` with the bit offset where the alloc start.
+    /// Else, return `Err` with the count of bits which are checked to be unable
+    /// to contains the alloc.
+    #[inline]
+    fn can_alloc(bitmap: &[u8], count: usize, offset: usize) -> Result<usize, usize> {
+        debug_assert!(bitmap[0] != u8::MAX);
+        debug_assert!(offset < u8::BITS as usize);
+        debug_assert!(count > 0);
+
+        let mask = !((1u16 << (u8::BITS as usize - offset)) - 1) as u8;
+        let bit_i = (bitmap[0] | mask).leading_ones() as usize;
+        if count == 1 {
+            return Ok(bit_i);
+        }
+
+        let mask = !((1 << (u8::BITS as usize).saturating_sub(count)) - 1) >> bit_i;
+        let val = bitmap[0];
+
+        if (val & mask) == 0 {
+            // if the alloc fit in the bitmap element (u8)
+            if count <= u8::BITS as usize - bit_i {
+                return Ok(bit_i);
             } else {
-                size = 0;
+                let remaining_count = count - (u8::BITS as usize - bit_i);
+
+                // the count of elements that needs to be 0 for the alloc to succeed
+                let full_elements = remaining_count / u8::BITS as usize;
+
+                for i in 1..full_elements + 1 {
+                    let v = bitmap[i];
+                    if v != 0 {
+                        return Err(i * u8::BITS as usize);
+                    }
+                }
+
+                let remaining_bits = remaining_count % u8::BITS as usize;
+                let mask = !(1 << (u8::BITS as usize - remaining_bits) - 1);
+                if bitmap[full_elements + 1] & mask == 0 {
+                    return Ok(bit_i);
+                } else {
+                    return Err((full_elements + 1) * u8::BITS as usize);
+                }
+            }
+        } else {
+            return Err(bit_i + (val << bit_i).leading_zeros() as usize);
+        }
+    }
+
+    fn find_pages(&self, count: usize) -> Result<usize, PhysicalAllocError> {
+        debug_assert!(count > 0);
+
+        let mut index = 0;
+        let mut off = 0;
+
+        loop {
+            let bitmap = &self.bitmap[index..];
+            let first_free =
+                Self::find_first_zero(bitmap).ok_or(PhysicalAllocError::OutOfMemory)?;
+            match Self::can_alloc(&bitmap[first_free..], count, off) {
+                Ok(off) => return Ok(first_free * u8::BITS as usize + off),
+                Err(e) => {
+                    index += e / u8::BITS as usize;
+                    off = off % u8::BITS as usize;
+                }
             }
         }
-        Err(PhysicalAllocError::OutOfMemory)
     }
 
     pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
