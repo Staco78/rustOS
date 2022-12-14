@@ -8,33 +8,31 @@ use crate::utils::no_irq_locks::{NoIrqMutex, NoIrqMutexGuard};
 
 use super::{
     mmu::TableEntry,
-    vmm::{self, phys_to_virt},
-    PageAllocator, ENTRIES_IN_TABLE, PAGE_SIZE, PMM_PAGE_ALLOCATOR,
+    vmm::{self},
+    PageAllocator, PhysicalAddress, ENTRIES_IN_TABLE, PAGE_SIZE, PMM_PAGE_ALLOCATOR,
 };
 
 #[derive(Debug)]
 pub struct VirtualAddressSpace {
     pub ptr: *mut TableEntry, // the first table
-    pub is_user: bool,        // TTBR0 or TTBR1 (before or after hole)
+    pub is_low: bool,         // TTBR0 or TTBR1 (before or after hole)
 }
 
 impl VirtualAddressSpace {
-    pub unsafe fn new(ptr: *mut TableEntry, is_user: bool) -> Self {
-        debug_assert!(ptr.addr() != 0);
-        let ptr = phys_to_virt(ptr as usize) as *mut TableEntry;
-        Self { ptr, is_user }
+    pub unsafe fn new(addr: PhysicalAddress, is_low: bool) -> Self {
+        debug_assert!(addr.addr() != 0);
+        let ptr = addr.to_virt().as_ptr::<TableEntry>();
+        Self { ptr, is_low }
     }
 
     // return None if out of memory
-    pub fn create_user() -> Option<Self> {
-        let l1 = unsafe { PMM_PAGE_ALLOCATOR.get().unwrap().alloc(1) };
-        if l1.is_null() {
-            return None;
-        }
-        let ptr = phys_to_virt(l1.addr()) as *mut u8;
+    pub fn create_low() -> Option<Self> {
+        let l1 = PMM_PAGE_ALLOCATOR.get().unwrap().alloc(1)?;
+
+        let ptr: *mut u8 = l1.to_virt().as_ptr();
         unsafe { ptr.write_bytes(0, PAGE_SIZE) };
 
-        Some(unsafe { Self::new(l1.addr() as *mut _, true) })
+        Some(unsafe { Self::new(l1, true) })
     }
 
     #[inline]
@@ -52,8 +50,8 @@ impl Display for VirtualAddressSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "VirtualAddressSpace {{ ptr: {:p}, is_user: {} }}",
-            self.ptr, self.is_user
+            "VirtualAddressSpace {{ ptr: {:p}, is_low: {} }}",
+            self.ptr, self.is_low
         )
     }
 }
@@ -82,8 +80,8 @@ impl AddrSpaceLock {
     }
 
     #[inline]
-    pub fn is_user(&self) -> bool {
-        unsafe { &*self.inner.data_ptr() }.is_user
+    pub fn is_low(&self) -> bool {
+        unsafe { &*self.inner.data_ptr() }.is_low
     }
 }
 

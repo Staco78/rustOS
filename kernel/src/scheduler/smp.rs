@@ -12,7 +12,7 @@ use crate::{
     device_tree::{self, Node},
     interrupts,
     memory::{
-        vmm::{virt_to_phys, vmm, MapOptions, MapSize},
+        vmm::{vmm, MapOptions, MapSize},
         AddrSpaceSelector, MemoryUsage, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
         PAGE_SIZE,
     },
@@ -49,12 +49,12 @@ pub fn register_cpus() {
 }
 
 pub fn start_cpus() {
-    let mut low_addr_space = VirtualAddressSpace::create_user().unwrap();
+    let mut low_addr_space = VirtualAddressSpace::create_low().unwrap();
     for i in 0..4 {
         vmm()
             .map_page(
-                i * 1024 * 1024 * 1024,
-                i * 1024 * 1024 * 1024,
+                VirtualAddress::new(i * 1024 * 1024 * 1024),
+                PhysicalAddress::new(i * 1024 * 1024 * 1024),
                 MapOptions::default_size(MapSize::Size1GB),
                 AddrSpaceSelector::Unlocked(&mut low_addr_space),
             )
@@ -101,13 +101,15 @@ struct StartInfos {
 fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
     trace!(target: "smp", "Starting cpu {id} with psci");
     let entry = ap_start as usize;
-    let entry = virt_to_phys(entry).unwrap();
+    let entry = VirtualAddress::new(entry).to_phys().unwrap();
 
     let start_infos = StartInfos {
         id,
         has_started: AtomicU32::new(0),
-        ttbr0: virt_to_phys(low_addr_space.ptr as usize).unwrap(),
-        ttbr1: TTBR1_EL1.get_baddr() as usize,
+        ttbr0: VirtualAddress::new(low_addr_space.ptr as usize)
+            .to_phys()
+            .unwrap(),
+        ttbr1: PhysicalAddress::new(TTBR1_EL1.get_baddr() as usize),
         stack_ptr: alloc_ap_stack(),
         vbar: VBAR_EL1.get(),
         mair: MAIR_EL1.get(),
@@ -116,9 +118,9 @@ fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
     };
 
     let ptr = (&start_infos as *const StartInfos).addr();
-    let ptr = virt_to_phys(ptr).unwrap();
+    let ptr = VirtualAddress::new(ptr).to_phys().unwrap();
 
-    unsafe { psci::cpu_on(id as u32, entry as u64, ptr as u64) };
+    unsafe { psci::cpu_on(id as u32, entry, ptr.addr() as u64) };
 
     while start_infos.has_started.load(Ordering::Acquire) != 1 {
         core::hint::spin_loop();

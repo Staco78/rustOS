@@ -11,14 +11,15 @@ use crate::{
     cpu::InterruptFrame,
     memory::{
         vmm::{self, vmm, MemoryUsage},
-        AddrSpaceSelector, PAGE_SIZE,
+        AddrSpaceSelector, PAGE_SIZE, VirtualAddress,
     },
 };
 
 use super::{
     consts::{KERNEL_STACK_PAGE_COUNT, USER_STACK_PAGE_COUNT},
     process::ProcessRef,
-    sync_ref::SyncRef, SCHEDULER, Cpu,
+    sync_ref::SyncRef,
+    Cpu, SCHEDULER,
 };
 
 pub type ThreadId = usize;
@@ -48,9 +49,9 @@ pub struct Thread {
     id: ThreadId,
     state: AtomicCell<ThreadState>,
 
-    user_stack_base: usize,
-    kernel_stack_base: usize,
-    kernel_stack: usize, // also a *mut InterruptFrame
+    user_stack_base: VirtualAddress,
+    kernel_stack_base: VirtualAddress,
+    kernel_stack: VirtualAddress, // also a *mut InterruptFrame
 
     is_idle_thread: bool,
 }
@@ -75,14 +76,14 @@ impl Thread {
 
         trace!(target: "scheduler",
             "Create {} thread {} of process {} with entry {:p}",
-            if addr_space.is_user() { "user" } else { "kernel" },
+            if addr_space.is_low() { "user" } else { "kernel" },
             id,
             process_id,
             entry as *const ()
         );
 
         let user_stack_base = {
-            let usage = if addr_space.is_user() {
+            let usage = if addr_space.is_low() {
                 MemoryUsage::UserData
             } else {
                 MemoryUsage::KernelHeap
@@ -103,12 +104,12 @@ impl Thread {
             kernel_stack_base + KERNEL_STACK_PAGE_COUNT * PAGE_SIZE - size_of::<InterruptFrame>();
 
         let regs = unsafe {
-            (kernel_stack as *mut InterruptFrame)
+            (kernel_stack.as_ptr::<InterruptFrame>())
                 .as_mut()
                 .unwrap_unchecked()
         };
 
-        regs.sp = (user_stack_base + USER_STACK_PAGE_COUNT * PAGE_SIZE) as u64;
+        regs.sp = (user_stack_base + USER_STACK_PAGE_COUNT * PAGE_SIZE).addr() as u64;
         regs.pc = entry as u64;
         regs.pstate = 4; // interrupts enabled, EL1t
 
@@ -132,7 +133,7 @@ impl Thread {
     #[inline]
     pub fn saved_context(&self) -> *mut InterruptFrame {
         debug_assert!(self.kernel_stack != 0);
-        self.kernel_stack as *mut InterruptFrame
+        self.kernel_stack.as_ptr()
     }
 }
 

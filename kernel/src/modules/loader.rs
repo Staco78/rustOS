@@ -2,7 +2,7 @@ use core::{mem::transmute, slice};
 
 use alloc::vec::Vec;
 use elf::{
-    abi::{PF_W, PT_LOAD, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE, SHT_RELA, R_AARCH64_GLOB_DAT},
+    abi::{PF_W, PT_LOAD, R_AARCH64_GLOB_DAT, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE, SHT_RELA},
     endian::LittleEndian,
     ElfBytes,
 };
@@ -103,11 +103,11 @@ impl<'a> Loader<'a> {
                 PT_LOAD => {
                     let file_off = segment.p_offset as usize;
                     let mem_off = segment.p_vaddr as usize;
-                    let alloc_addr = base_addr + mem_off & !((1 << PAGE_SHIFT) - 1);
+                    let alloc_addr = base_addr + (mem_off & !((1 << PAGE_SHIFT) - 1));
                     let mem_size = segment.p_memsz as usize;
                     let file_size = segment.p_filesz as usize;
                     debug_assert!(mem_size >= file_size);
-                    let alloc_size = mem_size + (mem_off + base_addr - alloc_addr);
+                    let alloc_size = mem_size + (mem_off + base_addr.addr() - alloc_addr.addr());
                     let page_count = alloc_size.next_multiple_of(PAGE_SIZE) >> PAGE_SHIFT;
                     let flags = MapFlags::default_rw(segment.p_flags & PF_W == 0);
                     vmm().alloc_pages_at_addr(
@@ -117,7 +117,7 @@ impl<'a> Loader<'a> {
                         AddrSpaceSelector::kernel(),
                     )?;
                     let buff = unsafe {
-                        slice::from_raw_parts_mut((base_addr + mem_off) as *mut u8, mem_size)
+                        slice::from_raw_parts_mut((base_addr + mem_off).as_ptr::<u8>(), mem_size)
                     };
                     let buff = &mut buff[..file_size];
                     buff.copy_from_slice(&self.data[file_off..file_off + file_size]);
@@ -149,7 +149,7 @@ impl<'a> Loader<'a> {
                     }
                 }
             } else if symbol.st_shndx < 0xFF00 {
-                symbol.st_value += base_addr as u64;
+                symbol.st_value += base_addr.addr() as u64;
                 let value = symbol.st_value as usize;
                 match strtab.get(symbol.st_name as usize)? {
                     "MODULE" => module = Some(value),
@@ -172,7 +172,7 @@ impl<'a> Loader<'a> {
             let relocations = self.file.section_data_as_relas(&rela_section)?;
             for rela in relocations {
                 let symbol = &symbols[rela.r_sym as usize];
-                let relocation_place: *mut () = (base_addr as u64 + rela.r_offset) as *mut _;
+                let relocation_place: *mut () = (base_addr + rela.r_offset as usize).as_ptr();
                 match rela.r_type {
                     R_AARCH64_JUMP_SLOT | R_AARCH64_GLOB_DAT => {
                         // S + A
@@ -187,7 +187,7 @@ impl<'a> Loader<'a> {
                         // Delta(S) + A
                         if rela.r_sym == 0 {
                             unsafe {
-                                *(relocation_place as *mut u64) = (base_addr as u64)
+                                *(relocation_place as *mut u64) = (base_addr.addr() as u64)
                                     .checked_add_signed(rela.r_addend)
                                     .expect("Overflow");
                             }

@@ -2,10 +2,13 @@ mod cpu_interface;
 mod distributor;
 mod regs;
 
-use crate::{acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD}, interrupts::interrupts::{InterruptsChip, CoreSelection}};
+use crate::{
+    acpi::madt::{Madt, MadtEntryType, MadtTable, GICC, GICD},
+    interrupts::interrupts::{CoreSelection, InterruptsChip},
+    memory::PhysicalAddress,
+};
 
 use self::{cpu_interface::CpuInterface, distributor::Distributor};
-
 
 pub struct GenericInterruptController {
     cpu_interface: CpuInterface,
@@ -44,13 +47,15 @@ impl GenericInterruptController {
             }
         }
 
+        let cpu_interface_addr = PhysicalAddress::new(
+            cpu_interface_addr.expect("GIC CPU interface base address not found"),
+        );
+        let distributor_addr =
+            PhysicalAddress::new(distributor_addr.expect("GIC Distributor base address not found"));
+
         Self {
-            cpu_interface: CpuInterface::new(
-                cpu_interface_addr.expect("GIC CPU interface base address not found"),
-            ),
-            distributor: Distributor::new(
-                distributor_addr.expect("GIC Distributor base address not found"),
-            ),
+            cpu_interface: CpuInterface::new(cpu_interface_addr),
+            distributor: Distributor::new(distributor_addr),
         }
     }
 }
@@ -90,6 +95,4 @@ impl InterruptsChip for GenericInterruptController {
     fn send_sgi(&self, destination: CoreSelection, interrupt_id: u8) {
         self.distributor.send_sgi(destination, interrupt_id);
     }
-
-    
 }

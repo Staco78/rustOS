@@ -2,7 +2,7 @@ use core::{arch::global_asm, ffi::CStr, num::NonZeroU32};
 
 use log::warn;
 
-use crate::device_tree;
+use crate::{device_tree, memory::PhysicalAddress};
 
 struct PsciInfos {
     cpu_on: Option<NonZeroU32>,
@@ -59,11 +59,11 @@ extern "C" {
 }
 
 #[inline]
-pub unsafe fn cpu_on(cpu_id: u32, entry: u64, context: u64) {
+pub unsafe fn cpu_on(cpu_id: u32, entry: PhysicalAddress, context: u64) {
     let func = INFOS
         .as_ref()
         .expect("Psci not init")
         .cpu_on
         .expect("No cpu_on func");
-    hvc_call(func.get(), cpu_id as u64, entry, context, 0);
+    hvc_call(func.get(), cpu_id as u64, entry.addr() as u64, context, 0);
 }

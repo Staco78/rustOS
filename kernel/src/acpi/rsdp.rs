@@ -1,6 +1,6 @@
 use core::{ffi::c_void, mem::size_of, slice};
 
-use crate::memory::vmm::phys_to_virt;
+use crate::memory::PhysicalAddress;
 
 use super::sdt::SdtHeader;
 
@@ -60,12 +60,24 @@ impl Rsdp {
 
     pub fn rsdt_tables(&self) -> RsdtEntriesIterator {
         assert!(self.rsdt_ptr != 0);
-        unsafe { RsdtEntriesIterator::new(phys_to_virt(self.rsdt_ptr as usize) as *const Rsdt) }
+        unsafe {
+            RsdtEntriesIterator::new(
+                PhysicalAddress::new(self.rsdt_ptr as usize)
+                    .to_virt()
+                    .as_ptr(),
+            )
+        }
     }
 
     pub fn xsdt_tables(&self) -> XsdtEntriesIterator {
         assert!(self.xsdt_ptr != 0);
-        unsafe { XsdtEntriesIterator::new(phys_to_virt(self.xsdt_ptr as usize) as *const Xsdt) }
+        unsafe {
+            XsdtEntriesIterator::new(
+                PhysicalAddress::new(self.xsdt_ptr as usize)
+                    .to_virt()
+                    .as_ptr(),
+            )
+        }
     }
 }
 
@@ -92,10 +104,11 @@ impl Iterator for RsdtEntriesIterator {
     type Item = *const SdtHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self
-            .entries
-            .get(self.index)
-            .map(|p| phys_to_virt(*p as usize) as *const SdtHeader);
+        let ptr = self.entries.get(self.index).map(|p| {
+            PhysicalAddress::new(*p as usize)
+                .to_virt()
+                .as_ptr::<SdtHeader>() as *const _
+        });
         self.index += 1;
         ptr
     }
@@ -133,6 +146,6 @@ impl Iterator for XsdtEntriesIterator {
         }
         let ptr = unsafe { self.entries.add(self.index).read_unaligned() };
         self.index += 1;
-        Some(phys_to_virt(ptr as usize) as Self::Item)
+        Some(PhysicalAddress::new(ptr as usize).to_virt().as_ptr())
     }
 }

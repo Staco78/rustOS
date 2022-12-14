@@ -1,16 +1,23 @@
-use core::{alloc::GlobalAlloc, mem::size_of, ptr};
+use core::{
+    alloc::GlobalAlloc,
+    mem::size_of,
+    ptr::{self, NonNull},
+};
 
 use log::trace;
 use static_assertions::{assert_eq_align, assert_eq_size};
 
-use crate::utils::{byte_size::ByteSize, sync_once_cell::SyncOnceCell, no_irq_locks::NoIrqMutex};
+use crate::{
+    memory::VirtualAddress,
+    utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex, sync_once_cell::SyncOnceCell},
+};
 
-use super::{constants::PAGE_SIZE, PageAllocator};
+use super::{address::Virtual, constants::PAGE_SIZE, PageAllocator};
 
 const MIN_PAGE_COUNT: usize = 16; // minimum page count to alloc from page allocator
 
 pub struct Allocator<'a> {
-    page_allocator: SyncOnceCell<&'a dyn PageAllocator>,
+    page_allocator: SyncOnceCell<&'a dyn PageAllocator<Virtual>>,
     head: NoIrqMutex<*mut ChunkHeader>,
 }
 
@@ -25,12 +32,14 @@ impl<'a> Allocator<'a> {
         }
     }
 
-    pub unsafe fn init(&self, page_allocator: &'a dyn PageAllocator) {
-        self.page_allocator.set(page_allocator).expect("Allocator already initialized");
+    pub unsafe fn init(&self, page_allocator: &'a dyn PageAllocator<Virtual>) {
+        self.page_allocator
+            .set(page_allocator)
+            .expect("Allocator already initialized");
     }
 
     #[inline]
-    fn page_allocator(&self) -> &'a dyn PageAllocator {
+    fn page_allocator(&self) -> &'a dyn PageAllocator<Virtual> {
         *self
             .page_allocator
             .get()
@@ -38,7 +47,7 @@ impl<'a> Allocator<'a> {
     }
 
     // size is the min size
-    unsafe fn alloc_chunk(&self, size: usize) -> *mut ChunkHeader {
+    unsafe fn alloc_chunk(&self, size: usize) -> Option<NonNull<ChunkHeader>> {
         let size = size + size_of::<ChunkHeader>() + size_of::<BlockHeader>();
 
         let page_count = if size % PAGE_SIZE == 0 {
@@ -49,10 +58,7 @@ impl<'a> Allocator<'a> {
 
         let page_count = page_count.max(MIN_PAGE_COUNT);
 
-        let chunk = self.page_allocator().alloc(page_count) as *mut ChunkHeader;
-        if chunk.is_null() {
-            return ptr::null_mut();
-        }
+        let chunk = self.page_allocator().alloc(page_count)?.as_ptr();
 
         let free = page_count * PAGE_SIZE - size_of::<ChunkHeader>() - size_of::<BlockHeader>();
 
@@ -72,7 +78,8 @@ impl<'a> Allocator<'a> {
             allocated_size: 0,
         };
 
-        chunk
+        // Safety: vmm allocator return a valid ptr so never 0
+        Some(NonNull::new_unchecked(chunk))
     }
 }
 
@@ -92,8 +99,10 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
         let mut head = self.head.lock();
 
         if head.is_null() {
-            *head = self.alloc_chunk(layout.size());
-            if head.is_null() {
+            let chunk = self.alloc_chunk(layout.size());
+            if let Some(chunk) = chunk {
+                *head = chunk.as_ptr();
+            } else {
                 return ptr::null_mut(); // chunk alloc failed
             }
         }
@@ -190,8 +199,10 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
 
             // no next chunk so alloc another
 
-            current_chunk_ref.next = self.alloc_chunk(size as usize);
-            if current_chunk_ref.next.is_null() {
+            let chunk = self.alloc_chunk(size as usize);
+            if let Some(chunk) = chunk {
+                current_chunk_ref.next = chunk.as_ptr();
+            } else {
                 // alloc failed
                 return ptr::null_mut();
             }
@@ -247,8 +258,10 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
                 *head = ptr::null_mut();
             }
 
-            self.page_allocator()
-                .dealloc(chunk.addr(), chunk_ref.page_count as usize);
+            self.page_allocator().dealloc(
+                VirtualAddress::new(chunk.addr()),
+                chunk_ref.page_count as usize,
+            );
         }
     }
 }

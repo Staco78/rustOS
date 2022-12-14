@@ -4,7 +4,7 @@ use core::{
     slice, str,
 };
 
-use crate::memory::{vmm::phys_to_virt, PhysicalAddress};
+use crate::memory::PhysicalAddress;
 use alloc::{string::String, vec::Vec};
 
 const MAGIC: u32 = 0xd00dfeed;
@@ -229,7 +229,7 @@ static mut ROOT_NODE: MaybeUninit<Node> = MaybeUninit::uninit();
 static mut BOOT_CPU: MaybeUninit<u32> = MaybeUninit::uninit();
 
 pub fn load(ptr: PhysicalAddress, len: usize) {
-    let buff = unsafe { slice::from_raw_parts(phys_to_virt(ptr) as *const u8, len) };
+    let buff = unsafe { slice::from_raw_parts(ptr.to_virt().as_ptr::<u8>(), len) };
     let parser = Parser::new(buff);
     let root_node = parser.parse();
     unsafe {

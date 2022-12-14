@@ -1,8 +1,9 @@
-use crate::memory::KERNEL_VIRT_SPACE_RANGE;
+use crate::memory::{HIGH_ADDR_SPACE_RANGE, PAGE_SHIFT};
 
 use super::{
+    address::Physical,
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
-    vmm::{phys_to_virt, FindSpaceError, MapError, MapFlags, MapOptions, MapSize, UnmapError},
+    vmm::{FindSpaceError, MapError, MapFlags, MapOptions, MapSize, UnmapError},
     PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
 use core::{arch::asm, fmt::Debug, ops::Range, ptr, slice};
@@ -82,11 +83,14 @@ pub union TableEntry {
 
 impl TableEntry {
     fn create_table_descriptor(address: PhysicalAddress) -> Self {
-        debug_assert!(address & 0xFFF == 0, "Table address must be aligned to 4KB");
+        debug_assert!(
+            address.is_aligned_to(PAGE_SIZE),
+            "Table address must be aligned to 4KB"
+        );
         let table = TableDescriptor::new()
             .with_present(true)
             .with_block_or_table(1)
-            .with_address(((address & 0xFFFF_FFFF_FFFF) >> 12) as u64);
+            .with_address(((address.addr() & 0xFFFF_FFFF_FFFF) >> PAGE_SHIFT) as u64);
         TableEntry {
             table_descriptor: table,
         }
@@ -97,12 +101,15 @@ impl TableEntry {
         l_attrib: LowerDescriptorAttributes,
         u_attrib: UpperDescriptorAttributes,
     ) -> Self {
-        debug_assert!(address & 0xFFF == 0, "Address must be aligned to 4KB");
+        debug_assert!(
+            address.is_aligned_to(PAGE_SIZE),
+            "Address must be aligned to 4KB"
+        );
         let bd = BlockDescriptor::new()
             .with_present(true)
             .with_block_or_table(1)
             .with_lower_attributes(l_attrib)
-            .with_address(((address & 0xFFFF_FFFF_FFFF) >> 12) as u64)
+            .with_address(((address.addr() & 0xFFFF_FFFF_FFFF) >> PAGE_SHIFT) as u64)
             .with_upper_attributes(u_attrib);
         TableEntry {
             block_descriptor: bd,
@@ -114,12 +121,15 @@ impl TableEntry {
         l_attrib: LowerDescriptorAttributes,
         u_attrib: UpperDescriptorAttributes,
     ) -> Self {
-        debug_assert!(address & 0xFFF == 0, "Address must be aligned to 4KB");
+        debug_assert!(
+            address.is_aligned_to(PAGE_SIZE),
+            "Address must be aligned to 4KB"
+        );
         let bd = BlockDescriptor::new()
             .with_present(true)
             .with_block_or_table(0)
             .with_lower_attributes(l_attrib)
-            .with_address(((address & 0xFFFF_FFFF_FFFF) >> 12) as u64)
+            .with_address(((address.addr() & 0xFFFF_FFFF_FFFF) >> PAGE_SHIFT) as u64)
             .with_upper_attributes(u_attrib);
         TableEntry {
             block_descriptor: bd,
@@ -134,7 +144,8 @@ impl TableEntry {
     #[inline]
     fn addr(&self) -> PhysicalAddress {
         debug_assert!(self.is_present());
-        unsafe { (self.block_descriptor.address() as usize) << 12 }
+        let v = unsafe { (self.block_descriptor.address() as usize) << 12 };
+        PhysicalAddress::new(v)
     }
 
     #[inline]
@@ -166,7 +177,7 @@ impl Debug for TableEntry {
 #[inline]
 fn invalidate_addr(addr: VirtualAddress) {
     unsafe {
-        let v = addr >> 12;
+        let v = addr.addr() >> PAGE_SHIFT;
         asm!(
             "dsb ishst",
             "tlbi vaae1is, {}",
@@ -203,6 +214,7 @@ unsafe fn get_table_mut(addr: *mut TableEntry) -> &'static mut [TableEntry] {
 
 #[inline]
 fn get_page_level_index(addr: VirtualAddress, level: PageLevel) -> usize {
+    let addr = addr.addr();
     match level {
         PageLevel::L0 => (addr >> 39) & 0x1FF,
         PageLevel::L1 => (addr >> 30) & 0x1FF,
@@ -232,11 +244,11 @@ impl From<usize> for PageLevel {
 }
 
 pub struct Mmu<'a> {
-    page_allocator: &'a dyn PageAllocator,
+    page_allocator: &'a dyn PageAllocator<Physical>,
 }
 
 impl<'a> Mmu<'a> {
-    pub fn new(page_allocator: &'a dyn PageAllocator) -> Self {
+    pub fn new(page_allocator: &'a dyn PageAllocator<Physical>) -> Self {
         Self { page_allocator }
     }
 
@@ -248,8 +260,8 @@ impl<'a> Mmu<'a> {
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<VirtualAddress, MapError> {
-        assert!(from % PAGE_SIZE == 0);
-        assert!(to % PAGE_SIZE == 0);
+        assert!(from.is_aligned_to(PAGE_SIZE));
+        assert!(to.is_aligned_to(PAGE_SIZE));
 
         let max_vaddr = from + count * PAGE_SIZE;
 
@@ -300,9 +312,9 @@ impl<'a> Mmu<'a> {
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
-        assert!(from % 0x1000 == 0);
-        assert!(to % 0x1000 == 0);
-        let l1 = if addr_space.is_user {
+        assert!(from.is_aligned_to(0x1000));
+        assert!(to.is_aligned_to(0x1000));
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
@@ -348,7 +360,10 @@ impl<'a> Mmu<'a> {
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
-        let l1 = if addr_space.is_user {
+        assert!(from.is_aligned_to(0x200000));
+        assert!(to.is_aligned_to(0x200000));
+
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
@@ -388,7 +403,10 @@ impl<'a> Mmu<'a> {
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<(), MapError> {
-        let l1 = if addr_space.is_user {
+        assert!(from.is_aligned_to(0x40000000));
+        assert!(to.is_aligned_to(0x40000000));
+
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
@@ -425,17 +443,17 @@ impl<'a> Mmu<'a> {
             if entry.is_block() {
                 return Err(TableCreateError::AlreadyMappedToBlock);
             }
-            Ok(unsafe { get_table_mut(phys_to_virt(entry.addr()) as *mut TableEntry) })
+            Ok(unsafe { get_table_mut(entry.addr().to_virt().as_ptr()) })
         } else {
             unsafe {
-                let page = self.page_allocator.alloc(1);
-                if page.is_null() {
-                    return Err(TableCreateError::PageAllocFailed);
-                }
-                ptr::write_bytes(phys_to_virt(page as usize) as *mut u8, 0, PAGE_SIZE); // clear page
+                let page = self
+                    .page_allocator
+                    .alloc(1)
+                    .ok_or(TableCreateError::PageAllocFailed)?;
+                ptr::write_bytes(page.to_virt().as_ptr::<u8>(), 0, PAGE_SIZE); // clear page
 
-                *entry = TableEntry::create_table_descriptor(page.addr());
-                Ok(get_table_mut(phys_to_virt(entry.addr()) as *mut TableEntry))
+                *entry = TableEntry::create_table_descriptor(page);
+                Ok(get_table_mut(entry.addr().to_virt().as_ptr()))
             }
         }
     }
@@ -445,14 +463,14 @@ impl<'a> Mmu<'a> {
         assert!(entry.is_present());
         assert!(entry.is_block());
         assert!(entry_size != MapSize::Size4KB);
-        let table = unsafe { self.page_allocator.alloc(1) };
-        if table.is_null() {
-            return Err(MapError::PageAllocFailed);
-        }
+        let table = self
+            .page_allocator
+            .alloc(1)
+            .ok_or(MapError::PageAllocFailed)?;
         unsafe {
-            ptr::write_bytes(phys_to_virt(table.addr()) as *mut u8, 0, PAGE_SIZE);
+            ptr::write_bytes(table.to_virt().as_ptr::<u8>(), 0, PAGE_SIZE);
         }
-        let l2 = unsafe { get_table_mut(phys_to_virt(table.addr()) as *mut TableEntry) };
+        let l2 = unsafe { get_table_mut(table.to_virt().as_ptr()) };
         let (l_attrib, u_attrib) = unsafe {
             (
                 entry.block_descriptor.lower_attributes(),
@@ -470,7 +488,7 @@ impl<'a> Mmu<'a> {
             }
         }
 
-        *entry = TableEntry::create_table_descriptor(table.addr());
+        *entry = TableEntry::create_table_descriptor(table);
 
         Ok(())
     }
@@ -494,7 +512,7 @@ impl<'a> Mmu<'a> {
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<PhysicalAddress, UnmapError> {
-        let l1 = if addr_space.is_user {
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
@@ -519,7 +537,7 @@ impl<'a> Mmu<'a> {
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<PhysicalAddress, UnmapError> {
-        let l1 = if addr_space.is_user {
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
@@ -543,7 +561,7 @@ impl<'a> Mmu<'a> {
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
     ) -> Result<PhysicalAddress, UnmapError> {
-        let l1 = if addr_space.is_user {
+        let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
@@ -570,8 +588,8 @@ impl<'a> Mmu<'a> {
         }
 
         let addr = entry.addr();
-        let addr = phys_to_virt(addr);
-        Ok(unsafe { get_table_mut(addr as *mut TableEntry) })
+        let addr = addr.to_virt();
+        Ok(unsafe { get_table_mut(addr.as_ptr()) })
     }
 
     // find free memory space of size "count * PAGE_SIZE" between min_addr and max_addr
@@ -584,10 +602,11 @@ impl<'a> Mmu<'a> {
         assert!(count > 0);
         assert!(!range.is_empty());
         assert!(count <= (range.end - range.start));
-        assert!(range.start % PAGE_SIZE == 0);
-        assert!(range.end % PAGE_SIZE == 0);
+        assert!(range.start.is_aligned_to(PAGE_SIZE));
+        assert!(range.end.is_aligned_to(PAGE_SIZE));
         assert!(
-            range.start % (1024 * 1024 * 1024) == 0 && range.end % (1024 * 1024 * 1024) == 0,
+            range.start.is_aligned_to(1024 * 1024 * 1024)
+                && range.end.is_aligned_to(1024 * 1024 * 1024),
             "Virtual memory regions must be aligned to 1 GB"
         );
         assert!(
@@ -606,7 +625,7 @@ impl<'a> Mmu<'a> {
             max_l1_index = 511;
         }
 
-        let l1 = if addr_space.is_user {
+        let l1 = if addr_space.is_low {
             addr_space.get_table()
         } else {
             let l0 = addr_space.get_table();
@@ -621,10 +640,10 @@ impl<'a> Mmu<'a> {
             table
         };
 
-        let page_off = if addr_space.is_user {
+        let page_off = if addr_space.is_low {
             0
         } else {
-            KERNEL_VIRT_SPACE_RANGE.start / PAGE_SIZE
+            HIGH_ADDR_SPACE_RANGE.start.addr() / PAGE_SIZE
         };
 
         let mut found_pages = 0usize;
@@ -637,8 +656,7 @@ impl<'a> Mmu<'a> {
                     found_pages = 0;
                     start_page = None;
                 } else {
-                    let l2 =
-                        unsafe { get_table(phys_to_virt(l1_entry.addr()) as *const TableEntry) };
+                    let l2 = unsafe { get_table(l1_entry.addr().to_virt().as_ptr()) };
                     for l2_index in 0..ENTRIES_IN_TABLE {
                         let l2_entry = &l2[l2_index];
                         if l2_entry.is_present() {
@@ -646,9 +664,7 @@ impl<'a> Mmu<'a> {
                                 found_pages = 0;
                                 start_page = None;
                             } else {
-                                let l3 = unsafe {
-                                    get_table(phys_to_virt(l2_entry.addr()) as *const TableEntry)
-                                };
+                                let l3 = unsafe { get_table(l2_entry.addr().to_virt().as_ptr()) };
                                 for l3_index in 0..ENTRIES_IN_TABLE {
                                     let l3_entry = &l3[l3_index];
                                     if l3_entry.is_present() {
@@ -662,7 +678,9 @@ impl<'a> Mmu<'a> {
                                         );
                                         found_pages += 1;
                                         if found_pages >= count {
-                                            return Ok(start_page.unwrap() * PAGE_SIZE);
+                                            return Ok(VirtualAddress::new(
+                                                start_page.unwrap() * PAGE_SIZE,
+                                            ));
                                         }
                                     }
                                 }
@@ -673,7 +691,7 @@ impl<'a> Mmu<'a> {
                             );
                             found_pages += 512;
                             if found_pages >= count {
-                                return Ok(start_page.unwrap() * PAGE_SIZE);
+                                return Ok(VirtualAddress::new(start_page.unwrap() * PAGE_SIZE));
                             }
                         }
                     }
@@ -682,7 +700,7 @@ impl<'a> Mmu<'a> {
                 start_page.get_or_insert((l0_index * 512 + l1_index) * 512 * 512 + page_off);
                 found_pages += 512 * 512;
                 if found_pages >= count {
-                    return Ok(start_page.unwrap() * PAGE_SIZE);
+                    return Ok(VirtualAddress::new(start_page.unwrap() * PAGE_SIZE));
                 }
             }
         }

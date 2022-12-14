@@ -2,7 +2,7 @@ use core::{ffi::CStr, fmt::Debug, mem::MaybeUninit, slice};
 
 use alloc::vec::Vec;
 
-use crate::memory::{vmm::phys_to_virt, PhysicalAddress};
+use crate::memory::PhysicalAddress;
 
 use super::{
     mount::mount,
@@ -182,7 +182,7 @@ static mut ROOT: MaybeUninit<RootNode<'static>> = MaybeUninit::uninit();
 
 /// **Safety**: ptr and len should be valid.
 pub unsafe fn load(ptr: PhysicalAddress, len: usize) {
-    let ptr = phys_to_virt(ptr) as *const u8;
+    let ptr = ptr.to_virt().as_ptr::<u8>();
     let data = slice::from_raw_parts(ptr, len);
     let root = RootNode::new(data);
     ROOT.write(root);

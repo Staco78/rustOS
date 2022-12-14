@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![allow(incomplete_features)]
 #![feature(panic_info_message)]
 #![feature(strict_provenance)]
 #![feature(pointer_byte_offsets)]
@@ -9,12 +8,10 @@
 #![feature(cstr_from_bytes_until_nul)]
 #![feature(pointer_is_aligned)]
 #![feature(let_chains)]
-#![feature(trait_upcasting)]
-#![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_write_slice)]
-#![feature(maybe_uninit_as_bytes)]
-#![feature(new_uninit)]
 #![feature(int_roundings)]
+#![feature(const_trait_impl)]
+#![feature(const_cmp)]
 
 mod acpi;
 mod cpu;
@@ -53,7 +50,6 @@ use crate::{
         sdt::Signature,
         spcr::{self, Spcr},
     },
-    memory::vmm::{self, phys_to_virt},
     scheduler::exit,
 };
 
@@ -86,7 +82,7 @@ extern "C" fn main(
 
     let config_tables = unsafe {
         slice::from_raw_parts(
-            vmm::phys_to_virt(config_tables_ptr) as *const ConfigTableEntry,
+            config_tables_ptr.to_virt().as_ptr::<ConfigTableEntry>(),
             config_table_len,
         )
     };
@@ -97,9 +93,9 @@ extern "C" fn main(
             .get_table::<Spcr>(Signature::SPCR)
         {
             if (*table).get_serial_type() == spcr::SerialType::Pl011UART {
-                Some(pl011_uart::Pl011::new(phys_to_virt(
-                    (*table).address.address as usize,
-                )))
+                Some(pl011_uart::Pl011::new(
+                    PhysicalAddress::new((*table).address.address as usize).to_virt(),
+                ))
             } else {
                 None
             }
@@ -113,7 +109,7 @@ extern "C" fn main(
 
     let memory_map = unsafe {
         slice::from_raw_parts(
-            vmm::phys_to_virt(memory_map_ptr) as *const MemoryDescriptor,
+            memory_map_ptr.to_virt().as_ptr::<MemoryDescriptor>(),
             memory_map_len,
         )
     };

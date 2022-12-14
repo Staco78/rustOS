@@ -8,6 +8,7 @@ use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
 
 mod addr_space;
+mod address;
 mod constants;
 mod heap;
 mod mmu;
@@ -15,13 +16,14 @@ mod pmm;
 pub mod vmm;
 
 pub use addr_space::*;
+pub use address::{PhysicalAddress, VirtualAddress};
 pub use constants::*;
 pub use vmm::{vmm, MemoryUsage};
 
-use self::pmm::PmmPageAllocator;
-
-pub type PhysicalAddress = usize;
-pub type VirtualAddress = usize;
+use self::{
+    address::{Address, MemoryKind},
+    pmm::PmmPageAllocator,
+};
 
 #[global_allocator]
 static ALLOCATOR: heap::Allocator = heap::Allocator::new();
@@ -60,7 +62,7 @@ pub enum CustomMemoryTypes {
     Initrd = 0x80000004,
 }
 
-pub trait PageAllocator: Sync + Debug {
-    unsafe fn alloc(&self, count: usize) -> *mut u8;
-    unsafe fn dealloc(&self, ptr: usize, count: usize);
+pub trait PageAllocator<K: MemoryKind>: Sync + Debug {
+    fn alloc(&self, count: usize) -> Option<Address<K>>;
+    unsafe fn dealloc(&self, ptr: Address<K>, count: usize);
 }

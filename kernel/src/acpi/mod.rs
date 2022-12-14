@@ -3,9 +3,9 @@ mod rsdp;
 pub mod sdt;
 pub mod spcr;
 
-use crate::{acpi::sdt::Signature, memory::vmm::phys_to_virt};
+use crate::{acpi::sdt::Signature, memory::PhysicalAddress};
 
-use core::{ffi::c_void, mem::MaybeUninit, slice};
+use core::{mem::MaybeUninit, slice};
 
 use static_assertions::assert_eq_size;
 use uefi::table::cfg::{ConfigTableEntry, ACPI2_GUID, ACPI_GUID};
@@ -27,9 +27,17 @@ impl AcpiParser {
         let mut acpi2 = None;
         for table in tables {
             if table.guid == ACPI_GUID {
-                acpi = Some(phys_to_virt(table.address.addr()) as *const c_void);
+                acpi = Some(
+                    PhysicalAddress::new(table.address.addr())
+                        .to_virt()
+                        .as_ptr(),
+                );
             } else if table.guid == ACPI2_GUID {
-                acpi2 = Some(phys_to_virt(table.address.addr()) as *const c_void);
+                acpi2 = Some(
+                    PhysicalAddress::new(table.address.addr())
+                        .to_virt()
+                        .as_ptr(),
+                );
             }
         }
 
@@ -69,7 +77,9 @@ impl AcpiParser {
         for table in self.get_iter() {
             if unsafe { (*table).signature == signature } {
                 let r = (table as *const T).as_ref()?;
-                let bytes = unsafe { slice::from_raw_parts(table as usize as *const u8, (*table).length as usize) };
+                let bytes = unsafe {
+                    slice::from_raw_parts(table as usize as *const u8, (*table).length as usize)
+                };
                 let sum = bytes.iter().fold(0u8, |sum, &byte| sum.wrapping_add(byte));
                 assert!(sum == 0);
                 return Some(r);

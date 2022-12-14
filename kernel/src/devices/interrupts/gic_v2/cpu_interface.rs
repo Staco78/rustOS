@@ -1,8 +1,8 @@
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 use crate::memory::{
-    vmm::{phys_to_virt, vmm, MapFlags, MapOptions, MapSize},
-    AddrSpaceSelector, VirtualAddress,
+    vmm::{vmm, MapFlags, MapOptions, MapSize},
+    AddrSpaceSelector, PhysicalAddress, VirtualAddress,
 };
 
 use super::regs::{CpuInterfaceRegs, GICC_CTLR, GICC_IAR, GICC_PMR};
@@ -12,23 +12,25 @@ pub struct CpuInterface {
 }
 
 impl CpuInterface {
-    pub fn new(base: VirtualAddress) -> Self {
-        assert!(base != 0);
+    pub fn new(base: PhysicalAddress) -> Self {
+        assert!(!base.is_null());
         vmm()
             .map_page(
-                phys_to_virt(base),
+                base.to_virt(),
                 base,
                 MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b11, 2, true)),
                 AddrSpaceSelector::kernel(),
             )
             .unwrap();
 
-        Self { base }
+        Self {
+            base: base.to_virt(),
+        }
     }
 
     #[inline]
     fn regs(&self) -> &CpuInterfaceRegs {
-        unsafe { &*(phys_to_virt(self.base) as *const CpuInterfaceRegs) }
+        unsafe { &*(self.base.as_ptr() as *const CpuInterfaceRegs) }
     }
 
     pub fn init(&self) {

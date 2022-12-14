@@ -103,5 +103,6 @@ pub fn set_output(output: &'static mut dyn Write) {
 }
 
 #[cfg(feature = "qemu_debug")]
-static mut QEMU_OUTPUT: crate::devices::pl011_uart::Pl011 =
-    crate::devices::pl011_uart::Pl011::new(crate::memory::vmm::phys_to_virt(0x9000000));
+static mut QEMU_OUTPUT: crate::devices::pl011_uart::Pl011 = crate::devices::pl011_uart::Pl011::new(
+    crate::memory::PhysicalAddress::new(0x9000000).to_virt(),
+);

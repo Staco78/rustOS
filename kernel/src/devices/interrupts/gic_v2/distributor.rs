@@ -3,37 +3,40 @@ use crate::{
     devices::gic_v2::regs::GICD_SGIR,
     interrupts::interrupts::CoreSelection,
     memory::{
-        vmm::{phys_to_virt, vmm, MapFlags, MapOptions, MapSize},
-        AddrSpaceSelector, PhysicalAddress,
+        vmm::{vmm, MapFlags, MapOptions, MapSize},
+        AddrSpaceSelector, PhysicalAddress, VirtualAddress,
     },
 };
 use tock_registers::interfaces::Writeable;
 
 pub struct Distributor {
-    base: PhysicalAddress,
+    base: VirtualAddress,
 }
 
 impl Distributor {
     pub fn new(base: PhysicalAddress) -> Self {
-        assert!(base != 0);
-        Self { base }
-    }
+        assert!(!base.is_null());
 
-    #[inline]
-    fn regs(&self) -> &DistributorRegs {
-        unsafe { &*(phys_to_virt(self.base) as *const DistributorRegs) }
-    }
-
-    pub fn init(&self) {
         vmm()
             .map_page(
-                phys_to_virt(self.base),
-                self.base,
+                base.to_virt(),
+                base,
                 MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b00, 2, true)), // write acccess, no shareability, Device-nGnRnE memory
                 AddrSpaceSelector::kernel(),
             )
             .unwrap();
 
+        Self {
+            base: base.to_virt(),
+        }
+    }
+
+    #[inline]
+    fn regs(&self) -> &DistributorRegs {
+        unsafe { &*(self.base.as_ptr() as *const DistributorRegs) }
+    }
+
+    pub fn init(&self) {
         self.regs().ctlr.write(GICD_CTLR::EnableGrp0::SET);
     }
 

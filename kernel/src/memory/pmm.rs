@@ -1,10 +1,8 @@
 use crate::utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex};
 
-use super::{
-    constants::PAGE_SIZE, vmm::phys_to_virt, CustomMemoryTypes, PageAllocator, PhysicalAddress,
-};
-use core::{fmt::Debug, ptr, slice};
-use log::{error, trace};
+use super::{constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress, address::Physical};
+use core::{fmt::Debug, slice};
+use log::trace;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub static mut PHYSICAL_MANAGER: Option<NoIrqMutex<PhysicalMemoryManager>> = None;
@@ -20,20 +18,20 @@ pub struct PhysicalMemoryManager {
 impl PhysicalMemoryManager {
     pub fn new(memory_map: &[MemoryDescriptor]) -> Self {
         let max_address = Self::get_max_address(memory_map);
-        let bitmap_size = max_address / PAGE_SIZE / 8;
+        let bitmap_size = max_address.addr() / PAGE_SIZE / 8;
         let bitmap_page_count = bitmap_size / PAGE_SIZE + (bitmap_size % PAGE_SIZE != 0) as usize;
         let bitmap_ptr = Self::get_free_space(memory_map, bitmap_page_count)
             .expect("Cannot find free space for pmm bitmap");
         let bitmap = unsafe {
             slice::from_raw_parts_mut(
-                phys_to_virt(bitmap_ptr) as *mut u8,
+                bitmap_ptr.to_virt().as_ptr::<u8>(),
                 (bitmap_page_count * PAGE_SIZE) as usize,
             )
         };
 
         let mut s = Self { bitmap };
         s.init_bitmap(memory_map);
-        s.set_used_range(bitmap_ptr / PAGE_SIZE, bitmap_page_count);
+        s.set_used_range(bitmap_ptr.addr() / PAGE_SIZE, bitmap_page_count);
         s.set_memory_map_usable(memory_map);
         s
     }
@@ -46,7 +44,7 @@ impl PhysicalMemoryManager {
                 max_address = addr;
             }
         }
-        max_address
+        PhysicalAddress::new(max_address)
     }
 
     fn is_memory_type_usable(mem_type: MemoryType) -> bool {
@@ -61,10 +59,13 @@ impl PhysicalMemoryManager {
     }
 
     // find free space in memory map (used to find where to put the bitmap)
-    fn get_free_space(memory_map: &[MemoryDescriptor], page_count: usize) -> Option<usize> {
+    fn get_free_space(
+        memory_map: &[MemoryDescriptor],
+        page_count: usize,
+    ) -> Option<PhysicalAddress> {
         for desc in memory_map {
             if Self::is_memory_type_usable(desc.ty) && desc.page_count as usize >= page_count {
-                return Some(desc.phys_start as usize);
+                return Some(PhysicalAddress::new(desc.phys_start as usize));
             }
         }
         None
@@ -265,7 +266,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    fn find_pages(&self, count: usize) -> Result<usize, PhysicalAllocError> {
+    fn find_pages(&self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
         debug_assert!(count > 0);
 
         let mut index = 0;
@@ -276,7 +277,7 @@ impl PhysicalMemoryManager {
             let first_free =
                 Self::find_first_zero(bitmap).ok_or(PhysicalAllocError::OutOfMemory)?;
             match Self::can_alloc(&bitmap[first_free..], count, off) {
-                Ok(off) => return Ok(first_free * u8::BITS as usize + off),
+                Ok(off) => return Ok(PhysicalAddress::new(first_free * u8::BITS as usize + off)),
                 Err(e) => {
                     index += e / u8::BITS as usize;
                     off = off % u8::BITS as usize;
@@ -287,15 +288,15 @@ impl PhysicalMemoryManager {
 
     pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
         let pages = self.find_pages(count)?;
-        self.set_used_range(pages, count);
-        trace!(target: "pmm", "Alloc {} page(s) at {:p}", count, (pages * PAGE_SIZE) as *const ());
+        self.set_used_range(pages.addr(), count);
+        trace!(target: "pmm", "Alloc {} page(s) at {}", count, (pages * PAGE_SIZE));
         Ok(pages * PAGE_SIZE)
     }
 
     pub fn unalloc_pages(&mut self, addr: PhysicalAddress, count: usize) {
-        assert!(addr % PAGE_SIZE == 0);
-        trace!(target: "pmm", "Dealloc {} page(s) at {:p}", count, addr as *const ());
-        self.set_free_range(addr / PAGE_SIZE, count);
+        assert!(addr.is_aligned_to(PAGE_SIZE));
+        trace!(target: "pmm", "Dealloc {} page(s) at {}", count, addr);
+        self.set_free_range(addr.addr() / PAGE_SIZE, count);
     }
 }
 
@@ -314,18 +315,15 @@ impl<'a> PmmPageAllocator<'a> {
     }
 }
 
-impl<'a> PageAllocator for PmmPageAllocator<'a> {
-    unsafe fn alloc(&self, count: usize) -> *mut u8 {
+impl<'a> PageAllocator<Physical> for PmmPageAllocator<'a> {
+    fn alloc(&self, count: usize) -> Option<PhysicalAddress> {
         match self.pmm.lock().alloc_pages(count) {
-            Ok(addr) => addr as *mut u8,
-            Err(e) => {
-                error!("{e:?}");
-                ptr::null_mut()
-            }
+            Ok(addr) => Some(addr),
+            Err(_) => None,
         }
     }
 
-    unsafe fn dealloc(&self, ptr: usize, count: usize) {
+    unsafe fn dealloc(&self, ptr: PhysicalAddress, count: usize) {
         self.pmm.lock().unalloc_pages(ptr, count)
     }
 }

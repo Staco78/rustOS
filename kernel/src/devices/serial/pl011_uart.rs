@@ -1,19 +1,21 @@
 use core::fmt::Write;
 
+use crate::memory::VirtualAddress;
+
 #[derive(Debug)]
 pub struct Pl011 {
-    base: usize,
+    base: VirtualAddress,
 }
 
 impl Pl011 {
-    pub const fn new(base: usize) -> Self {
+    pub const fn new(base: VirtualAddress) -> Self {
         Self { base }
     }
 
     #[inline]
     fn output_byte(&mut self, byte: u8) {
         unsafe {
-            *(self.base as *mut u8) = byte;
+            *(self.base.as_ptr()) = byte;
         }
     }
 }
