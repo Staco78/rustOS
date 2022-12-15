@@ -63,25 +63,31 @@ impl Drop for VirtualAddressSpace {
 }
 
 #[derive(Debug)]
-pub struct AddrSpaceLock {
-    inner: NoIrqMutex<VirtualAddressSpace>,
+pub enum AddrSpaceLock {
+    Owned(NoIrqMutex<VirtualAddressSpace>),
+    Ref(&'static AddrSpaceLock),
 }
 
 impl AddrSpaceLock {
-    pub fn new(data: VirtualAddressSpace) -> Self {
-        Self {
-            inner: NoIrqMutex::new(data),
-        }
+    #[inline]
+    pub fn new_owned(data: VirtualAddressSpace) -> Self {
+        Self::Owned(NoIrqMutex::new(data))
     }
 
     #[inline]
     pub fn lock(&self) -> NoIrqMutexGuard<VirtualAddressSpace> {
-        self.inner.lock()
+        match self {
+            Self::Owned(lock) => lock.lock(),
+            Self::Ref(lock) => lock.lock(),
+        }
     }
 
     #[inline]
     pub fn is_low(&self) -> bool {
-        unsafe { &*self.inner.data_ptr() }.is_low
+        match self {
+            Self::Owned(lock) => unsafe { &*lock.data_ptr() }.is_low,
+            Self::Ref(lock) => lock.is_low(),
+        }
     }
 }
 

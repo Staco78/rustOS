@@ -7,7 +7,6 @@ use super::{
 };
 use crate::{
     memory::{constants::PAGE_SIZE, KERNEL_HEAP_RANGE, LOW_ADDR_SPACE_RANGE, USER_SPACE_RANGE},
-    scheduler::SCHEDULER,
     utils::sync_once_cell::SyncOnceCell,
 };
 use core::{
@@ -17,18 +16,12 @@ use core::{
 use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
-static mut DEFAULT_KERNEL_ADDR_SPACE: Option<AddrSpaceLock> = None;
+static mut KERNEL_ADDR_SPACE: Option<AddrSpaceLock> = None;
 pub static VIRTUAL_MANAGER: SyncOnceCell<VirtualMemoryManager> = SyncOnceCell::new();
 
 pub fn init(pmm: &'static dyn PageAllocator<Physical>) {
     unsafe {
-        let ttbr1 = TTBR1_EL1.get_baddr();
-        assert!(ttbr1 != 0);
-
-        DEFAULT_KERNEL_ADDR_SPACE = Some(AddrSpaceLock::new(VirtualAddressSpace::new(
-            PhysicalAddress::new(ttbr1 as usize),
-            false,
-        )));
+        KERNEL_ADDR_SPACE = Some(create_kernel_addr_space());
 
         VIRTUAL_MANAGER
             .set(VirtualMemoryManager::new(pmm))
@@ -36,11 +29,11 @@ pub fn init(pmm: &'static dyn PageAllocator<Physical>) {
     };
 }
 
-pub fn create_current_kernel_addr_space() -> AddrSpaceLock {
+fn create_kernel_addr_space() -> AddrSpaceLock {
     let ttbr1 = TTBR1_EL1.get_baddr();
     assert!(ttbr1 != 0);
     unsafe {
-        AddrSpaceLock::new(VirtualAddressSpace::new(
+        AddrSpaceLock::new_owned(VirtualAddressSpace::new(
             PhysicalAddress::new(ttbr1 as usize),
             false,
         ))
@@ -55,11 +48,12 @@ pub fn vmm() -> &'static VirtualMemoryManager<'static> {
 }
 
 #[inline]
-pub(super) fn get_kernel_addr_space<'a>() -> &'a AddrSpaceLock {
-    SCHEDULER.try_get_kernel_process().map_or_else(
-        || unsafe { DEFAULT_KERNEL_ADDR_SPACE.as_ref().expect("Vmm not inited") },
-        |p| p.get_addr_space(),
-    )
+pub fn get_kernel_addr_space() -> &'static AddrSpaceLock {
+    unsafe {
+        KERNEL_ADDR_SPACE
+            .as_ref()
+            .expect("KERNEL_ADDR_SPACE not initialized")
+    }
 }
 
 pub struct VirtualMemoryManager<'a> {

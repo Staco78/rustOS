@@ -19,7 +19,7 @@ use crate::{
     cpu::{self, InterruptFrame},
     device_tree,
     interrupts::interrupts::{self, CoreSelection},
-    memory::vmm,
+    memory::{vmm, AddrSpaceLock},
     scheduler::{
         process::Process,
         thread::{Thread, ThreadEntry},
@@ -102,7 +102,7 @@ impl Scheduler {
         assert!(self.state.load() == SchedulerState::Initing);
         debug_assert!(kernel_process_.is_none());
 
-        let kernel_addr_space = vmm::create_current_kernel_addr_space();
+        let kernel_addr_space = AddrSpaceLock::Ref(vmm::get_kernel_addr_space());
         let kernel_process = Process::new(kernel_addr_space).into_ref();
         *kernel_process_ = Some(kernel_process);
 
