@@ -1,11 +1,12 @@
 [workspace]
-members = ["kernel", "loader", "modules/*", "libs/*", "libs/module/macros"]
+members = ["kernel", "loader", "modules/*"]
+exclude = ["tools/module-postlinker"]
 
 [profile.dev]
 opt-level = 1
 
 [profile.release]
-lto = true
+# lto = true
 debug = false
 strip = true
 

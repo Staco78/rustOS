@@ -1,4 +1,4 @@
-use core::fmt::Write;
+use core::{fmt::Write, ptr};
 
 use crate::memory::VirtualAddress;
 
@@ -15,7 +15,7 @@ impl Pl011 {
     #[inline]
     fn output_byte(&mut self, byte: u8) {
         unsafe {
-            *(self.base.as_ptr()) = byte;
+            ptr::write_volatile(self.base.as_ptr(), byte);
         }
     }
 }

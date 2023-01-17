@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+crate-type = ["lib", "staticlib"]
+
 [dependencies]
 log = { workspace = true }
 uefi = { version = "0.16.0", features = [] }
@@ -20,8 +23,6 @@ elf = { version = "0.7.0", default-features = false }
 
 tock-registers = "0.8"
 cortex-a = "8.0"
-
-module = { path = "../libs/module", features = ["kernel"] }
 
 [features]
 default = ["qemu_debug", "logger_cpu_id"]

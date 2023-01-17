@@ -1,13 +1,9 @@
 [package]
-name = "module"
+name = "module-postlinker"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-modules-macros = { path = "./macros" }
-log = { workspace = true }
-
-[features]
-kernel = [] # use this lib in the kernel
+object = {version = "0.30.2", features = ["write"]}

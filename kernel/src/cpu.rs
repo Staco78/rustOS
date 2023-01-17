@@ -2,7 +2,6 @@ use core::{fmt::Display, panic::PanicInfo};
 
 use cortex_a::{asm::wfi, registers::MPIDR_EL1};
 use log::error;
-use module::export;
 use static_assertions::assert_eq_size;
 use tock_registers::interfaces::Readable;
 
@@ -30,11 +29,6 @@ pub fn panic_handler(info: &PanicInfo) -> ! {
     }
 
     halt();
-}
-
-#[export(panic)]
-fn module_panic(info: &core::panic::PanicInfo) -> ! {
-    panic_handler(info)
 }
 
 pub fn halt() -> ! {

@@ -71,8 +71,8 @@ dependencies = [
 name = "hello"
 version = "0.1.0"
 dependencies = [
+ "kernel",
  "log",
- "module",
 ]
 
 [[package]]
@@ -86,7 +86,6 @@ dependencies = [
  "lock_api",
  "log",
  "modular-bitfield",
- "module",
  "num-derive",
  "num-traits",
  "spin",
@@ -143,22 +142,6 @@ version = "0.11.2"
 source = "git+https://github.com/ChefKissInc/modular-bitfield#364560329c9e5ea0b9260bdba7bd1e7e57bafb18"
 dependencies = [
  "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "module"
-version = "0.1.0"
-dependencies = [
- "log",
- "modules-macros",
-]
-
-[[package]]
-name = "modules-macros"
-version = "0.1.0"
-dependencies = [
  "quote",
  "syn",
 ]

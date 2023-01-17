@@ -24,6 +24,7 @@ QEMU_FLAGS=-machine virt -cpu max \
 		# -net none -monitor stdio -smp 4 -m 256 -serial file:log 
 
 export RUST_TARGET_PATH = $(shell pwd)/targets
+export RUSTFLAGS = -C symbol-mangling-version=v0 -C metadata=abcd
 
 run: build
 	$(QEMU) $(QEMU_FLAGS)
@@ -35,19 +36,18 @@ build: kernel loader initrd.tar
 
 .PHONY: kernel
 kernel: 
-	cd kernel && cargo build $(CARGO_FLAGS) --target aarch64-kernel && cd ..
-	aarch64-linux-gnu-objcopy -R "*exports" -R ".dyn*" target/aarch64-kernel/$(RELEASE_PATH)/kernel build/kernel
+	cd kernel && RUSTFLAGS="$(RUSTFLAGS) --emit=obj" cargo build $(CARGO_FLAGS) --target aarch64-kernel && cd ..
+	# aarch64-linux-gnu-objcopy -R "*exports" -R ".dyn*" target/aarch64-kernel/$(RELEASE_PATH)/kernel build/kernel
+	mkdir -p build/kernel_objs
+	rm -f build/kernel_objs/*
+	cd build/kernel_objs
+	ar x target/aarch64-kernel/$(RELEASE_PATH)/libkernel.a --output=build/kernel_objs
+	aarch64-linux-gnu-ld build/kernel_objs/* -o build/kernel -Tlinker.ld -x
 
-.PHONY: initrd/ksymbols
-initrd/ksymbols: kernel build/symbols
-	nm -Dg target/aarch64-kernel/$(RELEASE_PATH)/kernel | grep -f build/symbols | scripts/create_ksymbols.sh
 
-build/symbols: kernel
-	aarch64-linux-gnu-objcopy --dump-section .sym_exports=build/symbols target/aarch64-kernel/$(RELEASE_PATH)/kernel
-
-build/defs: kernel
-	aarch64-linux-gnu-objcopy --dump-section .defs_exports=build/defs_ target/aarch64-kernel/$(RELEASE_PATH)/kernel
-	diff build/defs build/defs_ > /dev/null || cp build/defs_ build/defs
+# .PHONY: initrd/ksymbols
+initrd/ksymbols: kernel
+	nm -g build/kernel | tools/create_ksymbols.sh
 
 .PHONY: loader
 loader:
@@ -55,9 +55,13 @@ loader:
 	cp target/aarch64-unknown-uefi/$(RELEASE_PATH)/loader.efi build/boot.efi
 
 .PHONY: $(MODULES)
-$(MODULES): build/defs
-	cd modules/$(basename $(@F)) && cargo build $(CARGO_FLAGS) --target aarch64-modules && cd ../..
-	cp target/aarch64-modules/$(RELEASE_PATH)/lib$(basename $(@F)).so initrd/$(@F)
+$(MODULES): 
+	# cd modules/$(basename $(@F)) && RUSTFLAGS="$(RUSTFLAGS) --emit=obj -Z no-link" cargo build $(CARGO_FLAGS) --target aarch64-modules && cd ../..
+	# cp target/aarch64-modules/$(RELEASE_PATH)/deps/$(basename $(@F)).o initrd/$(@F)
+	RD=$(RELEASE_PATH) NAME=$(basename $(@F)) ./build_module.sh
+	aarch64-linux-gnu-ld build/$(basename $(@F)).o -o build/$(basename $(@F))_.o -r -x -Tmodule-linker.ld
+	cargo +stable run --manifest-path=tools/module-postlinker/Cargo.toml -- build/$(basename $(@F))_.o initrd/$(@F)
+
 
 .PHONY: initrd.tar
 initrd.tar: initrd/ksymbols $(MODULES)
@@ -65,8 +69,9 @@ initrd.tar: initrd/ksymbols $(MODULES)
 	$(shell cd initrd && tar -cf ../initrd.tar * -H gnu --no-xattrs && cd ..)
 
 check:
-	@cargo check -q --message-format=json --manifest-path=kernel/Cargo.toml --target=targets/aarch64-kernel.json
+	@cargo check -q --message-format=json --manifest-path=kernel/Cargo.toml --target=targets/aarch64-kernel.json --lib
 	@cargo check -q --message-format=json --manifest-path=loader/Cargo.toml --target=aarch64-unknown-uefi
+	@cargo +stable check -q --message-format=json --manifest-path=tools/module-postlinker/Cargo.toml
 	@(for module in $(MODULES_DIRS) ; do \
         cargo check -q --message-format=json --manifest-path=$$module/Cargo.toml --target=targets/aarch64-modules.json ; \
     done)
@@ -76,5 +81,7 @@ check:
 
 clean:
 	cargo clean
-	rm symbols
-	rm initrd.tar
+	cargo clean --manifest-path=tools/module-postlinker/Cargo.toml
+	rm -rf build/*
+	rm -rf initrd/*
+	rm -f initrd.tar

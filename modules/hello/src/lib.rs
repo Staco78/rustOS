@@ -1,23 +1,36 @@
 #![no_std]
 #![feature(default_alloc_error_handler)]
+#![feature(unicode_internals)]
+extern crate alloc;
 
 use alloc::vec::Vec;
-use log::debug;
-use module::*;
+use kernel::{
+    logger,
+    memory::{vmm, AddrSpaceSelector, MemoryUsage},
+};
+use log::{debug, error};
 
-#[module]
-static MOD: Mod = Mod {};
+#[no_mangle]
+pub static MODULE_NAME: &str = env!("CARGO_PKG_NAME");
 
-struct Mod {}
+#[no_mangle]
+pub fn init() -> Result<(), ()> {
+    debug!("Hello");
+    error!("hey");
+    logger::log("hey logger\n").unwrap();
+    debug!("hey log");
 
-impl Module for Mod {
-    fn init(&self) -> Result<(), ()> {
-        debug!("Hello");
+    let x = core::unicode::conversions::to_lower('T');
+    debug!("{:?}", x);
 
-        let mut x = Vec::new();
-        x.resize(30, 4);
-        debug!("{:?}", x);
+    let mut x = Vec::new();
+    x.resize(30, 4);
+    debug!("{:?}", x);
 
-        Ok(())
-    }
+    let addr = vmm()
+        .alloc_pages(15, MemoryUsage::KernelHeap, AddrSpaceSelector::kernel())
+        .unwrap();
+    debug!("alloc at {:?}", addr);
+
+    Ok(())
 }

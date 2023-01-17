@@ -3,7 +3,6 @@ use core::fmt::Debug;
 use crate::{memory::mmu::invalidate_tlb_all, utils::sync_once_cell::SyncOnceCell};
 use cortex_a::registers::TTBR0_EL1;
 use log::info;
-use module::export;
 use tock_registers::interfaces::Writeable;
 use uefi::table::boot::MemoryDescriptor;
 
@@ -27,8 +26,6 @@ use self::{
 
 #[global_allocator]
 static ALLOCATOR: heap::Allocator = heap::Allocator::new();
-#[export]
-static KERNEL_ALLOCATOR: &'static (dyn core::alloc::GlobalAlloc + Sync) = &ALLOCATOR;
 pub static PMM_PAGE_ALLOCATOR: SyncOnceCell<PmmPageAllocator> = SyncOnceCell::new();
 
 pub fn init(memory_map: &'static [MemoryDescriptor]) {

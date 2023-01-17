@@ -64,6 +64,14 @@ impl<K: MemoryKind> Address<K> {
     pub fn is_null(self) -> bool {
         self.0 == 0
     }
+
+    #[inline]
+    #[must_use]
+    pub fn align_to(self, alignment: usize) -> Self {
+        let ptr = self.0 as *const u8;
+        let off = ptr.align_offset(alignment);
+        self + off
+    }
 }
 
 impl PhysicalAddress {
@@ -105,6 +113,16 @@ impl VirtualAddress {
             let v = (par & 0xFFFFFFFF000) | (self.addr() & 0xFFF);
             Some(PhysicalAddress::new(v))
         }
+    }
+
+    #[inline]
+    pub fn from_ptr<T>(ptr: *const T) -> Self {
+        Self(ptr.addr(), PhantomData)
+    }
+
+    #[inline]
+    pub fn from_ref<T>(r: &T) -> Self {
+        Self::from_ptr(r as *const T)
     }
 }
 
@@ -210,6 +228,14 @@ impl<K: MemoryKind, K2: MemoryKind> const PartialOrd<Address<K>> for Address<K2>
         self.0.partial_cmp(&other.0)
     }
 }
+impl<K: MemoryKind> Eq for Address<K> {}
+impl<K: MemoryKind> Ord for Address<K> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
 impl<K: MemoryKind> PartialEq<usize> for Address<K> {
     #[inline(always)]
     fn eq(&self, other: &usize) -> bool {

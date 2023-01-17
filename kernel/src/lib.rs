@@ -13,20 +13,20 @@
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
 
-mod acpi;
-mod cpu;
-mod device_tree;
-mod devices;
-mod fs;
-mod interrupts;
-mod logger;
-mod memory;
-mod modules;
-mod psci;
-mod scheduler;
-mod symbols;
-mod timer;
-mod utils;
+pub mod acpi;
+pub mod cpu;
+pub mod device_tree;
+pub mod devices;
+pub mod fs;
+pub mod interrupts;
+pub mod logger;
+pub mod memory;
+pub mod modules;
+pub mod psci;
+pub mod scheduler;
+pub mod symbols;
+pub mod timer;
+pub mod utils;
 
 extern crate alloc;
 
@@ -55,6 +55,7 @@ use crate::{
 
 pub static mut ACPI_TABLES: MaybeUninit<AcpiParser> = MaybeUninit::uninit();
 #[export_name = "start"]
+#[no_mangle]
 extern "C" fn main(
     config_tables_ptr: PhysicalAddress,
     config_table_len: usize,

@@ -1,7 +1,6 @@
 use core::fmt::Write;
 
 use log::Level;
-use module::export;
 
 use crate::{cpu, utils::no_irq_locks::NoIrqMutex};
 
@@ -12,8 +11,6 @@ pub struct KernelLogger {
 static LOGGER: KernelLogger = KernelLogger {
     lock: NoIrqMutex::new(()),
 };
-#[export]
-static KERNEL_LOGGER: &'static dyn log::Log = &LOGGER;
 
 static mut OUTPUT: Option<&'static mut dyn Write> = None;
 
@@ -99,6 +96,15 @@ pub fn init() {
 pub fn set_output(output: &'static mut dyn Write) {
     unsafe {
         OUTPUT = Some(output);
+    }
+}
+
+pub fn log(str: &str) -> Result<(), ()> {
+    if let Some(output) = unsafe { &mut OUTPUT } {
+        output.write_str(str).map_err(|_| ())?;
+        Ok(())
+    } else {
+        Err(())
     }
 }
 

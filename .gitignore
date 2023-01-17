@@ -5,3 +5,4 @@ build/*
 initrd/*
 initrd.tar
 libs/module/src/defs.rs
+tools/module-postlinker/target
