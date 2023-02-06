@@ -1,0 +1,3 @@
+{
+    "rust-analyzer.check.overrideCommand": ["cargo", "+stable", "check", "--message-format=json-diagnostic-rendered-ansi"]
+}

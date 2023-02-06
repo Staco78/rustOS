@@ -3,5 +3,5 @@
     "rust-analyzer.procMacro.attributes.enable": true,
     "rust-analyzer.diagnostics.disabled": ["unresolved-proc-macro"],
     "rust-analyzer.cargo.target": "aarch64-unknown-none",
-    "rust-analyzer.check.overrideCommand": ["make", "check"],
+    "rust-analyzer.check.overrideCommand": ["./x", "check"],
 }

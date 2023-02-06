@@ -1,6 +1,5 @@
 [workspace]
 members = ["kernel", "loader", "modules/*"]
-exclude = ["tools/module-postlinker"]
 
 [profile.dev]
 opt-level = 1

@@ -1,0 +1,56 @@
+use std::process::Command;
+
+use super::{Action, ActionRef, CommandAction};
+
+#[derive(Debug)]
+pub struct CargoCmdAction {
+    inner: CommandAction,
+}
+
+impl CargoCmdAction {
+    pub fn new(
+        manifest_path: &str,
+        name: Option<String>,
+        cmd: &str,
+        release: bool,
+        target: &str,
+        args: &[&str],
+        dependencies: Vec<ActionRef>,
+    ) -> Self {
+        let mut command = Command::new("cargo");
+        command.args([
+            cmd,
+            "-Zbuild-std=core,compiler_builtins,alloc",
+            "-Zbuild-std-features=compiler-builtins-mem",
+            format!("--target={}", target).as_str(),
+            format!("--manifest-path={}", manifest_path).as_str(),
+            "-q",
+        ]);
+        command.args(args);
+        command.env("RUSTFLAGS", "-C symbol-mangling-version=v0");
+        if release {
+            command.arg("-r");
+        }
+        Self {
+            inner: CommandAction::new(command, name, true, dependencies),
+        }
+    }
+}
+
+impl Action for CargoCmdAction {
+    fn name(&self) -> Option<String> {
+        self.inner.name()
+    }
+
+    fn run(self: Box<Self>) -> Result<(), Box<dyn std::error::Error>> {
+        Box::new(self.inner).run()
+    }
+
+    fn dependencies<'a>(&'a mut self) -> &'a mut Vec<ActionRef> {
+        self.inner.dependencies()
+    }
+
+    fn progress_report(&self) -> bool {
+        true
+    }
+}
