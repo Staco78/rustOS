@@ -8,9 +8,9 @@ use std::{
 };
 
 use actions::{
-    ActionRef, BuildModuleAction, CargoCmdAction, ClearDirAction, CommandAction, CopyFileAction,
-    DeleteAction, ExtractArchiveAction, FetchKernelLibsMetaAction, KernelRelinkAction, MkdirAction,
-    NoopAction, SpawnCommandAction, SymbolsExtractAction, TarCreateArchiveAction,
+    wait_commands, ActionRef, BuildModuleAction, CargoCmdAction, ClearDirAction, CommandAction,
+    CopyFileAction, DeleteAction, ExtractArchiveAction, FetchKernelLibsMetaAction,
+    KernelRelinkAction, MkdirAction, NoopAction, SymbolsExtractAction, TarCreateArchiveAction, BackgroundCommandAction,
 };
 use console::style;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -35,7 +35,7 @@ lazy_static! {
         ]);
 }
 
-const MODULE_LIST: &[&str] = &["hello"];
+const MODULE_LIST: &[&str] = &["hello", "ext2"];
 
 fn main() {
     let args: Vec<_> = {
@@ -47,12 +47,16 @@ fn main() {
     let params: Vec<_> = args.iter().filter(|e| !e.starts_with("-")).collect();
     let options: Vec<_> = args.iter().filter(|e| e.starts_with("-")).collect();
 
+    if params.len() > 1 {
+        print_error_and_exit(format!("Invalid parameters count: {}", params.len()));
+    }
+
     let mut release = false;
 
     for option in options.iter() {
         match option.as_str() {
             "-r" | "--release" => release = true,
-            _ => panic!("Invalid option {}", option),
+            _ => print_error_and_exit(format!("Invalid option {}", option)),
         }
     }
 
@@ -61,6 +65,7 @@ fn main() {
         "run" => action_run(release),
         "clean" => action_clean(),
         "check" => action_check(),
+        "debug" => action_debug(release),
         _ => {
             print_error_and_exit(format!("Unknown command {}", params[0]));
         }
@@ -74,6 +79,8 @@ fn main() {
     if let Err(e) = r {
         print_error_and_exit(e);
     }
+
+    wait_commands();
 }
 
 fn print_error_and_exit<T: Display>(msg: T) -> ! {
@@ -232,7 +239,7 @@ fn action_run(release: bool) -> Result<ActionRef, Box<dyn Error>> {
         "-m",
         "256",
     ]);
-    Ok(SpawnCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
+    Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
 }
 
 fn action_clean() -> Result<ActionRef, Box<dyn Error>> {
@@ -290,4 +297,39 @@ fn action_check() -> Result<ActionRef, Box<dyn Error>> {
     }
 
     Ok(NoopAction::new(None, vec![]).into())
+}
+
+fn action_debug(release: bool) -> Result<ActionRef, Box<dyn Error>> {
+    let build_action = action_build(release)?;
+    let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
+    cmd.args(&[
+        "-machine",
+        "virt",
+        "-cpu",
+        "max",
+        "-drive",
+        "if=pflash,format=raw,file=QEMU_CODE.fd,readonly=on",
+        "-drive",
+        "if=pflash,format=raw,file=QEMU_VARS.fd",
+        "-drive",
+        &format!(
+            "format=raw,file=fat:rw:{}",
+            Path::new("root")
+                .canonicalize()?
+                .as_os_str()
+                .to_str()
+                .unwrap()
+        ),
+        "-net",
+        "none",
+        "-monitor",
+        "stdio",
+        "-smp",
+        "4",
+        "-m",
+        "256",
+        "-s",
+        "-S",
+    ]);
+    Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
 }

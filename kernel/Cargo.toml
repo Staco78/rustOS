@@ -23,6 +23,7 @@ elf = { version = "0.7.0", default-features = false }
 
 tock-registers = "0.8"
 cortex-a = "8.0"
+hashbrown = "0.13.2"
 
 [features]
 default = ["qemu_debug", "logger_cpu_id"]

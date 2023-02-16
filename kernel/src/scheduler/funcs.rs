@@ -37,7 +37,7 @@ pub fn exit(code: isize) -> ! {
             0
         );
     }
-    
+
     yield_now();
     unreachable!()
 }

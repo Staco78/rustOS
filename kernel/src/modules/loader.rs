@@ -17,7 +17,7 @@ use elf::{
 use log::warn;
 
 use crate::{
-    fs::{open, ReadError},
+    fs::{self, ReadError},
     memory::{
         vmm::{vmm, AllocError, FindSpaceError, MemoryUsage},
         AddrSpaceSelector, VirtualAddress, PAGE_SHIFT, PAGE_SIZE,
@@ -27,8 +27,7 @@ use crate::{
 };
 
 pub fn load(path: &str) -> Result<(), ModuleLoadError> {
-    let file = open(path).ok_or(ModuleLoadError::NotFound)?;
-    let file = file.as_file().ok_or(ModuleLoadError::InvalidFileType)?;
+    let file = fs::get_node(path).map_err(|_| ModuleLoadError::NotFound)?;
 
     let buff = file.read_to_end_vec(0)?;
     let loader = Loader::new(&buff)?;

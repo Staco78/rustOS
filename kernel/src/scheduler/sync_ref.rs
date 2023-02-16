@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use alloc::sync::Arc;
 
-use crate::utils::no_irq_locks::{NoIrqRwLock, RwLockWriteGuard, RwLockReadGuard};
+use crate::utils::no_irq_locks::{NoIrqRwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub struct SyncRef<T>(Arc<NoIrqRwLock<T>>);
 

@@ -33,14 +33,27 @@ fn main() {
         }
     }
     page_arr_str.push_str("]");
-    writeln!(file, "static mut TABLE_LOW: Table = Table({});", page_arr_str).unwrap();
-    writeln!(file, "static mut TABLE_HIGH: Table = Table([TableEntry {{ bits: 0 }}; 512]);").unwrap();
+    writeln!(
+        file,
+        "static mut TABLE_LOW: Table = Table({});",
+        page_arr_str
+    )
+    .unwrap();
+    writeln!(
+        file,
+        "static mut TABLE_HIGH: Table = Table([TableEntry {{ bits: 0 }}; 512]);"
+    )
+    .unwrap();
     writeln!(
         file,
         "static mut TABLE_HIGH_L1_0: Table = Table({});",
         page_arr_str
     )
     .unwrap();
-    writeln!(file, "static mut TABLE_HIGH_L1_511: Table = Table([TableEntry {{ bits: 0 }}; 512]);").unwrap();
+    writeln!(
+        file,
+        "static mut TABLE_HIGH_L1_511: Table = Table([TableEntry {{ bits: 0 }}; 512]);"
+    )
+    .unwrap();
     println!("cargo:rerun-if-changed=build.rs");
 }

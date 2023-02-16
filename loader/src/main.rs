@@ -39,8 +39,18 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     stdout.clear().unwrap();
     memory::init();
 
-    let dtb = load_file(handle, &system_table, cstr16!("dtb.dtb"), MemoryType::custom(CustomMemoryTypes::Dtb as u32));
-    let initrd = load_file(handle, &system_table, cstr16!("initrd"), MemoryType::custom(CustomMemoryTypes::Initrd as u32));
+    let dtb = load_file(
+        handle,
+        &system_table,
+        cstr16!("dtb.dtb"),
+        MemoryType::custom(CustomMemoryTypes::Dtb as u32),
+    );
+    let initrd = load_file(
+        handle,
+        &system_table,
+        cstr16!("initrd"),
+        MemoryType::custom(CustomMemoryTypes::Initrd as u32),
+    );
 
     let kernel_entry = load_kernel(handle, &system_table);
     let kernel_stack_addr = system_table.boot_services().allocate_pages(
@@ -61,7 +71,6 @@ fn main(handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         let dtb_len = dtb.len();
         let initrd_ptr = initrd.as_ptr().addr();
         let initrd_len = initrd.len();
-
 
         asm!(
             "mov sp, {}",

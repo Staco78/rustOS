@@ -1,15 +1,30 @@
-use core::{ffi::CStr, fmt::Debug, mem::MaybeUninit, slice};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
+use core::{
+    ffi::CStr,
+    fmt::Debug,
+    mem::{transmute, MaybeUninit},
+    slice,
+};
 
-use alloc::vec::Vec;
-
-use crate::memory::PhysicalAddress;
+use crate::{
+    memory::PhysicalAddress,
+    utils::{
+        no_irq_locks::NoIrqMutex,
+        smart_ptr::{SmartBuff, SmartPtr, SmartPtrBuff, SmartPtrSizedBuff},
+    },
+};
 
 use super::{
-    mount::mount,
-    vfs::{DirNode, FileNode, FileOrDir, FsNode, ReadError, WriteError},
+    drivers::{self, register_driver},
+    node::{FileNode, FileNodeRef},
+    vfs, ReadError,
 };
 
 #[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
 struct TarHeader {
     filename: [u8; 100],
     mode: u64,
@@ -71,120 +86,124 @@ impl<'a> Iterator for TarIterator<'a> {
     }
 }
 
-struct Node<'a> {
-    name: &'a str,
-    data: &'a [u8],
+#[derive(Debug)]
+struct Driver {
+    filesystems: NoIrqMutex<Vec<(Arc<FileSystem>, Vec<u8>)>>,
 }
 
-impl<'a> FsNode for Node<'a> {
-    #[inline]
-    fn name(&self) -> &str {
-        &self.name
+impl Driver {
+    const fn new() -> Self {
+        Self {
+            filesystems: NoIrqMutex::new(Vec::new()),
+        }
     }
 }
 
-impl<'a> FileNode for Node<'a> {
-    #[inline]
-    fn size(&self) -> usize {
-        self.data.len()
+impl drivers::Driver for Driver {
+    fn fs_type<'a>(&'a self) -> &'a str {
+        "tar"
     }
 
-    fn read<'b>(
+    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, ()> {
+        // TODO: remove unwrap
+        let data = device.read_to_end_vec(0).unwrap();
+        // Safety: No filesystem deletion so `data` never dropped.
+        let data_ = unsafe { transmute::<&[u8], &'static [u8]>(&data) };
+        let fs = Arc::new_cyclic(|weak| FileSystem::new(weak.clone(), data_));
+        self.filesystems.lock().push((Arc::clone(&fs), data));
+
+        Ok(fs.root_node().clone())
+    }
+}
+
+#[derive(Debug)]
+struct FileSystem {
+    files: SmartPtrBuff<Node>,
+    root_node_buff: SmartPtrSizedBuff<RootNode, 1>,
+}
+
+impl FileSystem {
+    fn new(self_weak: Weak<Self>, data: &'static [u8]) -> Self {
+        let iter = TarIterator::new(data).map(|(h, d)| Node::new(h.name(), d));
+        let files = SmartPtrBuff::from_iter(iter);
+        let root_node_buff = SmartPtrSizedBuff::new(false);
+        root_node_buff
+            .create_new(RootNode { fs: self_weak })
+            .expect("Not enought space in buff");
+
+        Self {
+            files,
+            root_node_buff,
+        }
+    }
+
+    fn root_node(&self) -> SmartPtr<RootNode> {
+        self.root_node_buff.get(0).expect("RootNode not created")
+    }
+}
+
+#[derive(Debug)]
+struct RootNode {
+    fs: Weak<FileSystem>,
+}
+
+impl FileNode for RootNode {
+    fn size(&self) -> Result<usize, ()> {
+        Err(())
+    }
+
+    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, ()> {
+        let fs = self.fs.upgrade().unwrap();
+        let file = fs.files.iter().find(|f| f.name == name);
+        Ok(file.map(|f| f as FileNodeRef))
+    }
+}
+
+#[derive(Debug)]
+struct Node {
+    name: &'static str,
+    data: &'static [u8],
+}
+
+impl Node {
+    fn new(name: &'static str, data: &'static [u8]) -> Self {
+        Self { name, data }
+    }
+}
+
+impl FileNode for Node {
+    fn size(&self) -> Result<usize, ()> {
+        Ok(self.data.len())
+    }
+
+    fn read<'a>(
         &self,
         offset: usize,
-        buff: &'b mut [MaybeUninit<u8>],
-    ) -> Result<&'b mut [u8], ReadError> {
-        if offset >= self.size() {
+        buff: &'a mut [core::mem::MaybeUninit<u8>],
+    ) -> Result<&'a mut [u8], ReadError> {
+        if offset >= self.data.len() {
             return Ok(&mut []);
         }
-        let to_read = (self.size() - offset).min(buff.len());
+        let to_read = (self.data.len() - offset).min(buff.len());
         let end = offset + to_read;
 
         let buff = MaybeUninit::write_slice(&mut buff[..to_read], &self.data[offset..end]);
 
         Ok(buff)
     }
-
-    fn write(&self, _: usize, _: &[u8]) -> Result<usize, WriteError> {
-        Err(WriteError::ReadOnly)
-    }
 }
 
-impl<'a> Debug for Node<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Node").field("name", &self.name).finish()
-    }
-}
+static DRIVER: Driver = Driver::new();
 
-impl<'a> PartialEq for Node<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name.eq(other.name)
-    }
-}
+/// Safety: `initrd_ptr` and `initrd_len` should be valid.
+pub unsafe fn init(initrd_ptr: PhysicalAddress, initrd_len: usize) {
+    register_driver(&DRIVER);
 
-impl<'a> Eq for Node<'a> {}
+    let data: &[u8] = slice::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len);
+    let fs = Arc::new_cyclic(|w| FileSystem::new(w.clone(), data));
+    let vec: Vec<u8> =
+        unsafe { Vec::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len, initrd_len) };
+    DRIVER.filesystems.lock().push((fs.clone(), vec));
 
-impl<'a> PartialOrd for Node<'a> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.name.partial_cmp(other.name)
-    }
-}
-
-impl<'a> Ord for Node<'a> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.name.cmp(other.name)
-    }
-}
-
-struct RootNode<'a> {
-    files: Vec<Node<'a>>,
-}
-
-impl<'a> RootNode<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        let iter = TarIterator::new(data);
-        let mut files: Vec<Node<'_>> = iter
-            .map(|(h, data)| Node {
-                name: h.name(),
-                data,
-            })
-            .collect();
-        files.sort();
-        Self { files }
-    }
-}
-
-impl<'a> FsNode for RootNode<'a> {
-    fn name(&self) -> &str {
-        ""
-    }
-}
-
-impl<'a> DirNode for RootNode<'a> {
-    fn find(&self, name: &str) -> Option<FileOrDir> {
-        let index = self.files.binary_search_by(|f| f.name.cmp(name)).ok()?;
-        let file = &self.files[index];
-        Some(FileOrDir::File(file as _))
-    }
-
-    fn list(&self) -> Vec<&str> {
-        self.files.iter().map(|f| f.name).collect()
-    }
-}
-
-impl<'a> Debug for RootNode<'a> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "RootNode with {} files", self.files.len())
-    }
-}
-
-static mut ROOT: MaybeUninit<RootNode<'static>> = MaybeUninit::uninit();
-
-/// **Safety**: ptr and len should be valid.
-pub unsafe fn load(ptr: PhysicalAddress, len: usize) {
-    let ptr = ptr.to_virt().as_ptr::<u8>();
-    let data = slice::from_raw_parts(ptr, len);
-    let root = RootNode::new(data);
-    ROOT.write(root);
-    mount("/initrd", FileOrDir::Dir(ROOT.assume_init_ref()));
+    vfs::mount_node("/initrd", fs.root_node_buff.get(0).unwrap()).expect("Unable to mount initrd");
 }

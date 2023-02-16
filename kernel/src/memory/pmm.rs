@@ -1,6 +1,8 @@
 use crate::utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex};
 
-use super::{constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress, address::Physical};
+use super::{
+    address::Physical, constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress,
+};
 use core::{fmt::Debug, slice};
 use log::trace;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};

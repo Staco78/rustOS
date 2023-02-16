@@ -1,4 +1,11 @@
-use std::{fs, path::PathBuf, process::Command, str::FromStr};
+use std::{
+    fs,
+    path::PathBuf,
+    process::Command,
+    str::FromStr,
+    sync::Mutex,
+    thread::{self, JoinHandle},
+};
 
 use crate::error::Error;
 
@@ -13,12 +20,17 @@ pub struct CommandAction {
 }
 
 impl CommandAction {
-    pub fn new(cmd: Command, name: Option<String>, progress_report: bool, dependencies: Vec<ActionRef>) -> Self {
+    pub fn new(
+        cmd: Command,
+        name: Option<String>,
+        progress_report: bool,
+        dependencies: Vec<ActionRef>,
+    ) -> Self {
         Self {
             cmd,
             name,
             dependencies,
-            progress_report
+            progress_report,
         }
     }
 }
@@ -97,27 +109,27 @@ impl Action for KernelRelinkAction {
 }
 
 #[derive(Debug)]
-pub struct SpawnCommandAction {
-    cmd: Command,
+pub struct BackgroundCommandAction {
+    cmd: Option<Command>,
     name: Option<String>,
     dependencies: Vec<ActionRef>,
 }
 
-impl SpawnCommandAction {
+impl BackgroundCommandAction {
     pub fn new(cmd: Command, name: Option<String>, dependencies: Vec<ActionRef>) -> Self {
         Self {
-            cmd,
+            cmd: Some(cmd),
             name,
             dependencies,
         }
     }
 }
 
-impl Action for SpawnCommandAction {
+impl Action for BackgroundCommandAction {
     fn name(&self) -> Option<String> {
         self.name
             .clone()
-            .or(Some(format!("{}", format_cmd(&self.cmd))))
+            .or(Some(format!("{}", format_cmd(self.cmd.as_ref().unwrap()))))
     }
 
     fn dependencies<'a>(&'a mut self) -> &'a mut Vec<ActionRef> {
@@ -125,7 +137,20 @@ impl Action for SpawnCommandAction {
     }
 
     fn run(mut self: Box<Self>) -> Result<(), Box<dyn std::error::Error>> {
-        self.cmd.spawn()?;
+        let mut cmd = self.cmd.take().unwrap();
+        let thread = thread::spawn(move || {
+            let _ = cmd.status();
+        });
+        JOINS.lock()?.push(thread);
         Ok(())
+    }
+}
+
+static JOINS: Mutex<Vec<JoinHandle<()>>> = Mutex::new(Vec::new());
+
+pub fn wait_commands() {
+    let mut joins = JOINS.lock().unwrap();
+    for join in joins.drain(..) {
+        let _ = join.join();
     }
 }

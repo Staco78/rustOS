@@ -1,4 +1,7 @@
-use core::{sync::atomic::{AtomicUsize, Ordering}, fmt::Debug};
+use core::{
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use alloc::vec::Vec;
 

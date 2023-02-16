@@ -11,7 +11,7 @@ use crate::{
     cpu::InterruptFrame,
     memory::{
         vmm::{self, vmm, MemoryUsage},
-        AddrSpaceSelector, PAGE_SIZE, VirtualAddress,
+        AddrSpaceSelector, VirtualAddress, PAGE_SIZE,
     },
 };
 

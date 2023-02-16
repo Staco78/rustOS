@@ -7,7 +7,10 @@ use core::{
 use alloc::sync::Arc;
 use log::trace;
 
-use crate::{acpi::madt::Madt, cpu::InterruptFrame, devices::gic_v2::GenericInterruptController, scheduler::Cpu};
+use crate::{
+    acpi::madt::Madt, cpu::InterruptFrame, devices::gic_v2::GenericInterruptController,
+    scheduler::Cpu,
+};
 
 pub trait InterruptsChip: Sync + Send {
     fn init(&self);

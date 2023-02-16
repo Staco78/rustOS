@@ -48,7 +48,7 @@ pub enum SerialType {
     IntelUsif,
     Imx6,
     Sbsa, // arm generic uart
-    Dcc, // arm
+    Dcc,  // arm
     Bcm2835,
     Sdm845,
     IntelLpss,
@@ -80,17 +80,15 @@ pub struct Spcr {
     pub uart_clock_frequency: u32,
 }
 
-
 impl Spcr {
     pub fn get_serial_type(&self) -> SerialType {
         if self.header.revision == 1 {
             match self.interface_type {
                 0 => SerialType::Full16550,
                 1 => SerialType::Full16450,
-                _ => SerialType::Unknown
+                _ => SerialType::Unknown,
             }
-        }
-        else {
+        } else {
             match self.interface_type {
                 0 => SerialType::Full16550,
                 1 => SerialType::Subset16550,
@@ -111,7 +109,7 @@ impl Spcr {
                 18 => SerialType::Full16550,
                 19 => SerialType::Sdm845,
                 20 => SerialType::IntelLpss,
-                _ => SerialType::Unknown
+                _ => SerialType::Unknown,
             }
         }
     }

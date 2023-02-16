@@ -2,18 +2,15 @@ use core::ffi::CStr;
 
 use alloc::{collections::BTreeMap, string::String};
 
-use crate::fs::open;
+use crate::fs;
 
 static mut SYMBOLS: BTreeMap<String, usize> = BTreeMap::new();
 
 pub fn init() {
-    let file = open("/initrd/ksymbols")
-        .expect("ksymbols not found")
-        .as_file() 
-        .expect("ksymbols is not a file");
+    let file = fs::get_node("/initrd/ksymbols").expect("ksymbols not found");
     let symbols = unsafe { &mut SYMBOLS };
     let buff = file.read_to_end_vec(0).unwrap();
-    let mut off = 0;
+    let mut off = 0;    
     while off + 10 < buff.len() {
         let addr = usize::from_le_bytes(<[u8; 8]>::try_from(&buff[off..off + 8]).unwrap());
         let cstr = CStr::from_bytes_until_nul(&buff[off + 8..]).unwrap();

@@ -2,13 +2,17 @@ use core::{fmt::Debug, mem::MaybeUninit, slice};
 
 use alloc::vec::Vec;
 
-pub trait FsNode: Send + Sync + Debug {
-    fn name(&self) -> &str;
-}
+use crate::utils::smart_ptr::SmartPtr;
 
-pub trait FileNode: FsNode {
+use super::{ReadError, WriteError};
+
+pub type FileNodeRef = SmartPtr<dyn FileNode>;
+
+pub trait FileNode: Send + Sync + Debug {
     /// Return the size of the file in bytes.
-    fn size(&self) -> usize;
+    fn size(&self) -> Result<usize, ()> {
+        unimplemented!()
+    }
 
     /// The size to read is the len of `buff`.
     ///
@@ -19,7 +23,10 @@ pub trait FileNode: FsNode {
         &self,
         offset: usize,
         buff: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ReadError>;
+    ) -> Result<&'a mut [u8], ReadError> {
+        let _ = (offset, buff);
+        unimplemented!()
+    }
 
     fn read_vec(&self, offset: usize, size: usize) -> Result<Vec<u8>, ReadError> {
         let mut vec: Vec<u8> = Vec::with_capacity(size);
@@ -41,11 +48,12 @@ pub trait FileNode: FsNode {
 
     #[inline]
     fn read_to_end_vec(&self, offset: usize) -> Result<Vec<u8>, ReadError> {
-        if offset >= self.size() {
+        // TODO: remove unwrap
+        if offset >= self.size().unwrap() {
             return Ok(Vec::new());
         }
 
-        let to_read = self.size() - offset;
+        let to_read = self.size().unwrap() - offset;
         self.read_vec(offset, to_read)
     }
 
@@ -54,36 +62,19 @@ pub trait FileNode: FsNode {
     /// `offset` is the offset from the start of the file where to start writing.
     ///
     /// Return the total of bytes written or an error
-    fn write(&self, offset: usize, buff: &[u8]) -> Result<usize, WriteError>;
-}
-
-pub trait DirNode: FsNode {
-    /// Find a file (or directory) with its `name`
-    fn find(&self, name: &str) -> Option<FileOrDir>;
-
-    fn list(&self) -> Vec<&str>;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum FileOrDir<'a> {
-    File(&'a dyn FileNode),
-    Dir(&'a dyn DirNode),
-}
-
-impl<'a> FileOrDir<'a> {
-    #[inline]
-    pub fn as_file(self) -> Option<&'a dyn FileNode> {
-        match self {
-            Self::File(r) => Some(r),
-            _ => None,
-        }
+    fn write(&self, offset: usize, buff: &[u8]) -> Result<usize, WriteError> {
+        let _ = (offset, buff);
+        unimplemented!()
     }
-}
 
-#[derive(Debug)]
-pub enum ReadError {}
+    /// Find a file (or directory) with its `name`
+    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, ()> {
+        let _ = name;
+        unimplemented!()
+    }
 
-#[derive(Debug)]
-pub enum WriteError {
-    ReadOnly,
+    /// List all files in the directory.
+    fn list(&self) -> Result<Vec<&str>, ()> {
+        unimplemented!()
+    }
 }

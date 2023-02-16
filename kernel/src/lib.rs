@@ -12,6 +12,9 @@
 #![feature(int_roundings)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
+#![feature(unsize)]
+#![feature(coerce_unsized)]
+#![feature(new_uninit)]
 
 pub mod acpi;
 pub mod cpu;
@@ -134,6 +137,6 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
-    modules::load("/initrd/hello.kmod").unwrap();
+    modules::load("/initrd/ext2.kmod").unwrap();
     exit(0);
 }

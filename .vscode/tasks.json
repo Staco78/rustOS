@@ -5,7 +5,7 @@
             "label": "qemu",
             "type": "shell",
             "isBackground": true,
-            "command": "make debug",
+            "command": "./x debug",
             "problemMatcher": {
                 "pattern": {
                     "regexp": "^QEMU [\\d\\.]+ monitor - type 'help' for more information",
@@ -13,8 +13,8 @@
                 },
                 "background": {
                     "activeOnStart": true,
-                    "beginsPattern": "^QEMU [\\d\\.]+ monitor - type 'help' for more information",
-                    "endsPattern": "^QEMU [\\d\\.]+ monitor - type 'help' for more information"
+                    "beginsPattern": "QEMU [\\d\\.]+ monitor - type 'help' for more information",
+                    "endsPattern": "QEMU [\\d\\.]+ monitor - type 'help' for more information"
                 }
             }
         }
