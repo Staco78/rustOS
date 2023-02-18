@@ -52,3 +52,15 @@ impl AsRef<Path> for &str {
         Path::new(self)
     }
 }
+
+impl PartialEq<str> for &Path {
+    fn eq(&self, other: &str) -> bool {
+        &self.inner == other
+    }
+}
+
+impl PartialEq<char> for &Path {
+    fn eq(&self, other: &char) -> bool {
+        self.len() == 1 && self.chars().next().unwrap() == *other
+    }
+}

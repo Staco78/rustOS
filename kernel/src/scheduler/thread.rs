@@ -9,8 +9,9 @@ use log::trace;
 
 use crate::{
     cpu::InterruptFrame,
+    error::Error,
     memory::{
-        vmm::{self, vmm, MemoryUsage},
+        vmm::{vmm, MemoryUsage},
         AddrSpaceSelector, VirtualAddress, PAGE_SIZE,
     },
 };
@@ -60,14 +61,14 @@ unsafe impl Send for Thread {}
 unsafe impl Sync for Thread {}
 
 impl Thread {
-    /// create a new thread:
-    /// allocate an user and a kernel stack and
-    /// add itself in the thread list of its parent process
+    /// Create a new thread:
+    /// Allocate an user and a kernel stack and
+    /// add itself in the thread list of its parent process.
     pub fn new(
         process: &ProcessRef,
         entry: ThreadEntry,
         is_idle_thread: bool,
-    ) -> Result<ThreadRef, ThreadCreateError> {
+    ) -> Result<ThreadRef, Error> {
         let id = get_next_id();
         let mut process_lock = process.write();
         let process_id = process_lock.id();
@@ -206,21 +207,5 @@ impl Debug for Thread {
             .field("kernel_stack", &self.kernel_stack)
             .field("is_idle_thread", &self.is_idle_thread)
             .finish()
-    }
-}
-
-#[derive(Debug)]
-pub enum ThreadCreateError {
-    OutOfMemory,
-    OutOfVirtualSpace,
-}
-
-impl From<vmm::AllocError> for ThreadCreateError {
-    fn from(e: vmm::AllocError) -> Self {
-        match e {
-            vmm::AllocError::InvalidAddrSpace => unreachable!(),
-            vmm::AllocError::OutOfMemory => ThreadCreateError::OutOfMemory,
-            vmm::AllocError::OutOfVirtualSpace => ThreadCreateError::OutOfVirtualSpace,
-        }
     }
 }

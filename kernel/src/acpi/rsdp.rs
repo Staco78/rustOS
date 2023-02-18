@@ -1,6 +1,6 @@
 use core::{ffi::c_void, mem::size_of, slice};
 
-use crate::memory::PhysicalAddress;
+use crate::{memory::PhysicalAddress, error::Error};
 
 use super::sdt::SdtHeader;
 
@@ -23,18 +23,14 @@ pub struct Rsdp {
     reserved: [u8; 3],
 }
 
-#[derive(Debug)]
-pub enum RsdpError {
-    InvalidSignature,
-    InvalidChecksum,
-}
+
 
 impl Rsdp {
-    pub unsafe fn from_ptr(ptr: *const c_void) -> Result<&'static Self, RsdpError> {
+    pub unsafe fn from_ptr(ptr: *const c_void) -> Result<&'static Self, Error> {
         let s = ptr as *const Self;
         let s = &*s;
         if s.signature != RSDP_SIGNATURE {
-            return Err(RsdpError::InvalidSignature);
+            return Err(Error::CustomStr("Invalid RSDP signature"));
         }
 
         let length = if s.revision > 0 {
@@ -47,7 +43,7 @@ impl Rsdp {
         let sum = bytes.iter().fold(0u8, |sum, &byte| sum.wrapping_add(byte));
 
         if sum != 0 {
-            return Err(RsdpError::InvalidChecksum);
+            return Err(Error::CustomStr("Invalid RSDP checksum"));
         }
 
         Ok(s)

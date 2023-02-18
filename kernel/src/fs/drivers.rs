@@ -3,13 +3,15 @@ use core::fmt::Debug;
 use hashbrown::HashMap;
 use spin::{lazy::Lazy, lock_api::RwLock};
 
+use crate::error::Error;
+
 use super::node::FileNodeRef;
 
 pub trait Driver: Send + Sync + Debug {
     fn fs_type<'a>(&'a self) -> &'a str;
 
     /// Get the root node of the filesystem on `device`. This is the node that will be mounted.
-    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, ()>;
+    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, Error>;
 }
 
 static DRIVERS: Lazy<RwLock<HashMap<&'static str, &'static dyn Driver>>> =

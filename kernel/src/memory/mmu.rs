@@ -1,12 +1,13 @@
+use crate::error::{Error, MemoryError::*};
 use crate::memory::{HIGH_ADDR_SPACE_RANGE, PAGE_SHIFT};
 
 use super::{
     address::Physical,
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
-    vmm::{FindSpaceError, MapError, MapFlags, MapOptions, MapSize, UnmapError},
+    vmm::{MapFlags, MapOptions, MapSize},
     PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
-use core::{arch::asm, fmt::Debug, ops::Range, ptr, slice};
+use core::{arch::asm, fmt::Debug, mem::discriminant, ops::Range, ptr, slice};
 use modular_bitfield::prelude::*;
 
 #[bitfield(bits = 12)]
@@ -259,7 +260,7 @@ impl<'a> Mmu<'a> {
         count: usize,
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<VirtualAddress, MapError> {
+    ) -> Result<VirtualAddress, Error> {
         assert!(from.is_aligned_to(PAGE_SIZE));
         assert!(to.is_aligned_to(PAGE_SIZE));
 
@@ -296,7 +297,7 @@ impl<'a> Mmu<'a> {
         to: PhysicalAddress,
         options: MapOptions,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<VirtualAddress, MapError> {
+    ) -> Result<VirtualAddress, Error> {
         match options.size {
             MapSize::Size4KB => self.map_4k(from, to, options.flags, addr_space)?,
             MapSize::Size2MB => self.map_2m(from, to, options.flags, addr_space)?,
@@ -311,18 +312,18 @@ impl<'a> Mmu<'a> {
         to: PhysicalAddress,
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<(), MapError> {
+    ) -> Result<(), Error> {
         assert!(from.is_aligned_to(0x1000));
         assert!(to.is_aligned_to(0x1000));
         let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
-            self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)])
-                .map_err(|e| {
-                    debug_assert!(e != TableCreateError::AlreadyMappedToBlock);
-                    e
-                })?
+            let r = self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)]);
+            if let Err(e) = &r {
+                debug_assert!(discriminant(e) != discriminant(&Error::Memory(AlreadyMapped)));
+            }
+            r?
         };
         let entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
         if flags.force_remap() && entry.is_present() && entry.is_block() {
@@ -340,7 +341,7 @@ impl<'a> Mmu<'a> {
         let l3_entry = &mut l3[get_page_level_index(from, PageLevel::L3)];
 
         if l3_entry.is_present() && !flags.force_remap() {
-            return Err(MapError::AlreadyMapped);
+            return Err(Error::Memory(AlreadyMapped));
         }
 
         let l_attrib = LowerDescriptorAttributes::new()
@@ -359,7 +360,7 @@ impl<'a> Mmu<'a> {
         to: PhysicalAddress,
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<(), MapError> {
+    ) -> Result<(), Error> {
         assert!(from.is_aligned_to(0x200000));
         assert!(to.is_aligned_to(0x200000));
 
@@ -367,11 +368,11 @@ impl<'a> Mmu<'a> {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
-            self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)])
-                .map_err(|e| {
-                    debug_assert!(e != TableCreateError::AlreadyMappedToBlock);
-                    e
-                })?
+            let r = self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)]);
+            if let Err(e) = &r {
+                debug_assert!(discriminant(e) != discriminant(&Error::Memory(AlreadyMapped)));
+            }
+            r?
         };
         let entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
         if flags.force_remap() && entry.is_present() && entry.is_block() {
@@ -383,7 +384,7 @@ impl<'a> Mmu<'a> {
         let l2_entry = &mut l2[get_page_level_index(from, PageLevel::L2)];
 
         if l2_entry.is_present() && !flags.force_remap() {
-            return Err(MapError::AlreadyMapped);
+            return Err(Error::Memory(AlreadyMapped));
         }
 
         let l_attrib = LowerDescriptorAttributes::new()
@@ -402,7 +403,7 @@ impl<'a> Mmu<'a> {
         to: PhysicalAddress,
         flags: MapFlags,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<(), MapError> {
+    ) -> Result<(), Error> {
         assert!(from.is_aligned_to(0x40000000));
         assert!(to.is_aligned_to(0x40000000));
 
@@ -410,17 +411,17 @@ impl<'a> Mmu<'a> {
             addr_space.get_table_mut()
         } else {
             let l0 = &mut addr_space.get_table_mut();
-            self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)])
-                .map_err(|e| {
-                    debug_assert!(e != TableCreateError::AlreadyMappedToBlock);
-                    e
-                })?
+            let r = self.create_next_table(&mut l0[get_page_level_index(from, PageLevel::L0)]);
+            if let Err(e) = &r {
+                debug_assert!(discriminant(e) != discriminant(&Error::Memory(AlreadyMapped)));
+            }
+            r?
         };
 
         let l1_entry = &mut l1[get_page_level_index(from, PageLevel::L1)];
 
         if l1_entry.is_present() && !flags.force_remap() {
-            return Err(MapError::AlreadyMapped);
+            return Err(Error::Memory(AlreadyMapped));
         }
 
         let l_attrib = LowerDescriptorAttributes::new()
@@ -438,10 +439,10 @@ impl<'a> Mmu<'a> {
     fn create_next_table(
         &self,
         entry: &mut TableEntry,
-    ) -> Result<&'static mut [TableEntry], TableCreateError> {
+    ) -> Result<&'static mut [TableEntry], Error> {
         if entry.is_present() {
             if entry.is_block() {
-                return Err(TableCreateError::AlreadyMappedToBlock);
+                return Err(Error::Memory(AlreadyMapped));
             }
             Ok(unsafe { get_table_mut(entry.addr().to_virt().as_ptr()) })
         } else {
@@ -449,7 +450,7 @@ impl<'a> Mmu<'a> {
                 let page = self
                     .page_allocator
                     .alloc(1)
-                    .ok_or(TableCreateError::PageAllocFailed)?;
+                    .ok_or(Error::Memory(OutOfPhysicalMemory))?;
                 ptr::write_bytes(page.to_virt().as_ptr::<u8>(), 0, PAGE_SIZE); // clear page
 
                 *entry = TableEntry::create_table_descriptor(page);
@@ -459,14 +460,14 @@ impl<'a> Mmu<'a> {
     }
 
     // remap a block with 512 block of the lower size
-    fn remap_block(&self, entry: &mut TableEntry, entry_size: MapSize) -> Result<(), MapError> {
+    fn remap_block(&self, entry: &mut TableEntry, entry_size: MapSize) -> Result<(), Error> {
         assert!(entry.is_present());
         assert!(entry.is_block());
         assert!(entry_size != MapSize::Size4KB);
         let table = self
             .page_allocator
             .alloc(1)
-            .ok_or(MapError::PageAllocFailed)?;
+            .ok_or(Error::Memory(OutOfPhysicalMemory))?;
         unsafe {
             ptr::write_bytes(table.to_virt().as_ptr::<u8>(), 0, PAGE_SIZE);
         }
@@ -499,7 +500,7 @@ impl<'a> Mmu<'a> {
         addr: VirtualAddress,
         size: MapSize,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<PhysicalAddress, UnmapError> {
+    ) -> Result<PhysicalAddress, Error> {
         match size {
             MapSize::Size4KB => self.unmap_4k(addr, addr_space),
             MapSize::Size2MB => self.unmap_2m(addr, addr_space),
@@ -511,7 +512,7 @@ impl<'a> Mmu<'a> {
         &self,
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<PhysicalAddress, UnmapError> {
+    ) -> Result<PhysicalAddress, Error> {
         let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
@@ -523,7 +524,7 @@ impl<'a> Mmu<'a> {
         let entry = &mut l3[get_page_level_index(addr, PageLevel::L3)];
 
         if !entry.is_present() {
-            return Err(UnmapError::NotMapped);
+            return Err(Error::Memory(NotMapped));
         }
 
         let r_addr = entry.unmap();
@@ -536,7 +537,7 @@ impl<'a> Mmu<'a> {
         &self,
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<PhysicalAddress, UnmapError> {
+    ) -> Result<PhysicalAddress, Error> {
         let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
@@ -547,7 +548,7 @@ impl<'a> Mmu<'a> {
         let entry = &mut l2[get_page_level_index(addr, PageLevel::L2)];
 
         if !entry.is_present() {
-            return Err(UnmapError::NotMapped);
+            return Err(Error::Memory(NotMapped));
         }
 
         let r_addr = entry.unmap();
@@ -560,7 +561,7 @@ impl<'a> Mmu<'a> {
         &self,
         addr: VirtualAddress,
         addr_space: &mut VirtualAddressSpace,
-    ) -> Result<PhysicalAddress, UnmapError> {
+    ) -> Result<PhysicalAddress, Error> {
         let l1 = if addr_space.is_low {
             addr_space.get_table_mut()
         } else {
@@ -570,7 +571,7 @@ impl<'a> Mmu<'a> {
         let entry = &mut l1[get_page_level_index(addr, PageLevel::L1)];
 
         if !entry.is_present() {
-            return Err(UnmapError::NotMapped);
+            return Err(Error::Memory(NotMapped));
         }
 
         let r_addr = entry.unmap();
@@ -579,12 +580,12 @@ impl<'a> Mmu<'a> {
         Ok(r_addr)
     }
 
-    fn get_table(&self, entry: &TableEntry) -> Result<&'static mut [TableEntry], TableGetError> {
+    fn get_table(&self, entry: &TableEntry) -> Result<&'static mut [TableEntry], Error> {
         if !entry.is_present() {
-            return Err(TableGetError::NotMapped);
+            return Err(Error::Memory(NotMapped));
         }
         if entry.is_block() {
-            return Err(TableGetError::AlreadyMappedToBlock);
+            return Err(Error::Memory(AlreadyMapped));
         }
 
         let addr = entry.addr();
@@ -598,7 +599,7 @@ impl<'a> Mmu<'a> {
         count: usize,
         range: Range<VirtualAddress>,
         addr_space: &VirtualAddressSpace,
-    ) -> Result<VirtualAddress, FindSpaceError> {
+    ) -> Result<VirtualAddress, Error> {
         assert!(count > 0);
         assert!(!range.is_empty());
         assert!(count <= (range.end - range.start));
@@ -631,10 +632,9 @@ impl<'a> Mmu<'a> {
             let l0 = addr_space.get_table();
             let r = self.get_table(&l0[l0_index]);
             let table = match r {
-                Err(TableGetError::AlreadyMappedToBlock) => {
-                    return Err(FindSpaceError::OutOfVirtualSpace)
-                }
-                Err(TableGetError::NotMapped) => return Ok(range.start),
+                Err(Error::Memory(AlreadyMapped)) => return Err(Error::Memory(OutOfVirtualSpace)),
+                Err(Error::Memory(NotMapped)) => return Ok(range.start),
+                Err(e) => return Err(e),
                 Ok(table) => table,
             };
             table
@@ -705,36 +705,6 @@ impl<'a> Mmu<'a> {
             }
         }
 
-        Err(FindSpaceError::OutOfVirtualSpace)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum TableCreateError {
-    AlreadyMappedToBlock,
-    PageAllocFailed,
-}
-
-impl From<TableCreateError> for MapError {
-    fn from(err: TableCreateError) -> Self {
-        match err {
-            TableCreateError::AlreadyMappedToBlock => MapError::AlreadyMapped,
-            TableCreateError::PageAllocFailed => MapError::PageAllocFailed,
-        }
-    }
-}
-
-#[derive(Debug)]
-enum TableGetError {
-    NotMapped,
-    AlreadyMappedToBlock,
-}
-
-impl From<TableGetError> for UnmapError {
-    fn from(err: TableGetError) -> Self {
-        match err {
-            TableGetError::NotMapped => UnmapError::NotMapped,
-            TableGetError::AlreadyMappedToBlock => UnmapError::ParentMappedToBlock,
-        }
+        Err(Error::Memory(OutOfVirtualSpace))
     }
 }

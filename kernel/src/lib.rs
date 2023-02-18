@@ -15,11 +15,13 @@
 #![feature(unsize)]
 #![feature(coerce_unsized)]
 #![feature(new_uninit)]
+#![feature(error_in_core)]
 
 pub mod acpi;
 pub mod cpu;
 pub mod device_tree;
 pub mod devices;
+pub mod error;
 pub mod fs;
 pub mod interrupts;
 pub mod logger;
@@ -137,6 +139,6 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
-    modules::load("/initrd/ext2.kmod").unwrap();
+    modules::load("/initrd/hello.kmod").unwrap();
     exit(0);
 }

@@ -1,31 +1,41 @@
-use alloc::vec::Vec;
+use alloc::{format, string::ToString, vec::Vec};
 use spin::lock_api::RwLock;
 
-use crate::fs::{drivers::get_driver_for_type, path::Path};
+use crate::{
+    error::{
+        Error,
+        FsError::{Custom, CustomStr, NotFound},
+    },
+    fs::{drivers::get_driver_for_type, path::Path},
+};
 
-use super::{node::FileNodeRef, OpenError};
+use super::node::FileNodeRef;
 
-pub fn get_node<P>(path: P) -> Result<FileNodeRef, OpenError>
+pub fn get_node<P>(path: P) -> Result<FileNodeRef, Error>
 where
     P: AsRef<Path>,
 {
     let path = path.as_ref();
     assert!(path.is_absolute(), "Relative path not supported yet");
-    let mountpoint = get_mountpoint(path).ok_or(OpenError::NotFound)?;
+    let mountpoint = get_mountpoint(path).ok_or(Error::Fs(NotFound))?;
     let path_in_mountpoint: &Path = path
         .strip_prefix(mountpoint.path.as_str())
         .expect("Open: path doesn't start with moutpoint path")
         .into();
-    debug_assert!(path_in_mountpoint.is_absolute());
-
     let mut current_node = mountpoint.root_node;
+
+    if path_in_mountpoint.len() == 0 || path_in_mountpoint == '/' {
+        return Ok(current_node);
+    }
+
+    debug_assert!(path_in_mountpoint.is_absolute());
 
     for path_part in path_in_mountpoint[1..].split('/') {
         // TODO: remove the unwrap().
         current_node = current_node
             .find(path_part)
             .unwrap()
-            .ok_or(OpenError::NotFound)?;
+            .ok_or(Error::Fs(NotFound))?;
     }
     Ok(current_node)
 }
@@ -38,17 +48,22 @@ pub struct MountPoint {
 
 static MOUNTPOINTS: RwLock<Vec<MountPoint>> = RwLock::new(Vec::new());
 
-pub fn mount_device(path: &'static Path, device: FileNodeRef, fs_type: &str) -> Result<(), ()> {
+pub fn mount_device(path: &'static Path, device: FileNodeRef, fs_type: &str) -> Result<(), Error> {
     let driver = match get_driver_for_type(fs_type) {
         Some(driver) => driver,
-        None => return Err(()), // Unknown fs type
+        None => {
+            return Err(Error::Fs(Custom(format!(
+                "Unknown filesystem type: {}",
+                fs_type.to_string()
+            ))))
+        }
     };
     let root_node = driver.get_root_node(&device)?;
     mount_node(path, root_node)?;
     Ok(())
 }
 
-pub fn mount_node<S>(path: S, node: FileNodeRef) -> Result<(), ()>
+pub fn mount_node<S>(path: S, node: FileNodeRef) -> Result<(), Error>
 where
     S: Into<&'static Path>,
 {
@@ -58,7 +73,7 @@ where
     };
     let mut mountpoints = MOUNTPOINTS.write();
     let i = match mountpoints.binary_search_by(|m| m.path.cmp(mountpoint.path)) {
-        Ok(_) => return Err(()), // Already mounted
+        Ok(_) => return Err(Error::Fs(CustomStr("Already mounted"))),
         Err(i) => i,
     };
     mountpoints.insert(i, mountpoint);

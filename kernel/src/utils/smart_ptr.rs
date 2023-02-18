@@ -45,6 +45,9 @@ impl<T: ?Sized> Deref for SmartPtr<T> {
 
 impl<T: ?Sized> Clone for SmartPtr<T> {
     fn clone(&self) -> Self {
+        let inner = unsafe { self.ptr.as_ref() };
+        let mut ref_count = inner.ref_count.lock();
+        *ref_count += 1;
         Self { ptr: self.ptr }
     }
 }

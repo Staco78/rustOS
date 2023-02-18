@@ -3,7 +3,7 @@ mod rsdp;
 pub mod sdt;
 pub mod spcr;
 
-use crate::{acpi::sdt::Signature, memory::PhysicalAddress};
+use crate::{acpi::sdt::Signature, memory::PhysicalAddress, error::Error};
 
 use core::{mem::MaybeUninit, slice};
 
@@ -22,7 +22,7 @@ pub struct AcpiParser {
 }
 
 impl AcpiParser {
-    pub fn parse_tables(tables: &[ConfigTableEntry]) -> Result<Self, AcpiParsingError> {
+    pub fn parse_tables(tables: &[ConfigTableEntry]) -> Result<Self, Error> {
         let mut acpi = None;
         let mut acpi2 = None;
         for table in tables {
@@ -46,7 +46,7 @@ impl AcpiParser {
         } else if let Some(acpi) = acpi {
             unsafe { Rsdp::from_ptr(acpi).unwrap() }
         } else {
-            return Err(AcpiParsingError::RsdpNotFound);
+            return Err(Error::CustomStr("ACPI load: RDSP not found"));
         };
 
         let (rsdt_iter, xsdt_iter) = if rsdp.revision() > 0 {
@@ -87,11 +87,6 @@ impl AcpiParser {
         }
         None
     }
-}
-
-#[derive(Debug)]
-pub enum AcpiParsingError {
-    RsdpNotFound,
 }
 
 #[derive(Debug, Clone, Copy)]

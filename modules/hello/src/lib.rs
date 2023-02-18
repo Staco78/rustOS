@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use kernel::{
     logger,
-    memory::{vmm, AddrSpaceSelector, MemoryUsage},
+    memory::{vmm, AddrSpaceSelector, MemoryUsage}, error::Error,
 };
 use log::{debug, error};
 
@@ -14,7 +14,7 @@ use log::{debug, error};
 pub static MODULE_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[no_mangle]
-pub fn init() -> Result<(), ()> {
+pub fn init() -> Result<(), Error> {
     debug!("Hello");
     error!("hey");
     logger::log("hey logger\n").unwrap();

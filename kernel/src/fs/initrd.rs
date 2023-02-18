@@ -10,6 +10,7 @@ use core::{
 };
 
 use crate::{
+    error::Error,
     memory::PhysicalAddress,
     utils::{
         no_irq_locks::NoIrqMutex,
@@ -20,7 +21,7 @@ use crate::{
 use super::{
     drivers::{self, register_driver},
     node::{FileNode, FileNodeRef},
-    vfs, ReadError,
+    vfs,
 };
 
 #[repr(C, packed)]
@@ -104,7 +105,7 @@ impl drivers::Driver for Driver {
         "tar"
     }
 
-    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, ()> {
+    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, Error> {
         // TODO: remove unwrap
         let data = device.read_to_end_vec(0).unwrap();
         // Safety: No filesystem deletion so `data` never dropped.
@@ -148,11 +149,7 @@ struct RootNode {
 }
 
 impl FileNode for RootNode {
-    fn size(&self) -> Result<usize, ()> {
-        Err(())
-    }
-
-    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, ()> {
+    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, Error> {
         let fs = self.fs.upgrade().unwrap();
         let file = fs.files.iter().find(|f| f.name == name);
         Ok(file.map(|f| f as FileNodeRef))
@@ -172,7 +169,7 @@ impl Node {
 }
 
 impl FileNode for Node {
-    fn size(&self) -> Result<usize, ()> {
+    fn size(&self) -> Result<usize, Error> {
         Ok(self.data.len())
     }
 
@@ -180,7 +177,7 @@ impl FileNode for Node {
         &self,
         offset: usize,
         buff: &'a mut [core::mem::MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ReadError> {
+    ) -> Result<&'a mut [u8], Error> {
         if offset >= self.data.len() {
             return Ok(&mut []);
         }

@@ -2,16 +2,17 @@ use core::{fmt::Debug, mem::MaybeUninit, slice};
 
 use alloc::vec::Vec;
 
-use crate::utils::smart_ptr::SmartPtr;
-
-use super::{ReadError, WriteError};
+use crate::{
+    error::{Error, FsError::*},
+    utils::smart_ptr::SmartPtr,
+};
 
 pub type FileNodeRef = SmartPtr<dyn FileNode>;
 
 pub trait FileNode: Send + Sync + Debug {
     /// Return the size of the file in bytes.
-    fn size(&self) -> Result<usize, ()> {
-        unimplemented!()
+    fn size(&self) -> Result<usize, Error> {
+        Err(Error::Fs(NotImplemented("Getting size")))
     }
 
     /// The size to read is the len of `buff`.
@@ -23,12 +24,12 @@ pub trait FileNode: Send + Sync + Debug {
         &self,
         offset: usize,
         buff: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ReadError> {
+    ) -> Result<&'a mut [u8], Error> {
         let _ = (offset, buff);
-        unimplemented!()
+        Err(Error::Fs(NotImplemented("Reading")))
     }
 
-    fn read_vec(&self, offset: usize, size: usize) -> Result<Vec<u8>, ReadError> {
+    fn read_vec(&self, offset: usize, size: usize) -> Result<Vec<u8>, Error> {
         let mut vec: Vec<u8> = Vec::with_capacity(size);
         let buff = unsafe {
             let ptr = vec.as_mut_ptr().cast::<MaybeUninit<u8>>();
@@ -47,7 +48,7 @@ pub trait FileNode: Send + Sync + Debug {
     }
 
     #[inline]
-    fn read_to_end_vec(&self, offset: usize) -> Result<Vec<u8>, ReadError> {
+    fn read_to_end_vec(&self, offset: usize) -> Result<Vec<u8>, Error> {
         // TODO: remove unwrap
         if offset >= self.size().unwrap() {
             return Ok(Vec::new());
@@ -62,19 +63,19 @@ pub trait FileNode: Send + Sync + Debug {
     /// `offset` is the offset from the start of the file where to start writing.
     ///
     /// Return the total of bytes written or an error
-    fn write(&self, offset: usize, buff: &[u8]) -> Result<usize, WriteError> {
+    fn write(&self, offset: usize, buff: &[u8]) -> Result<usize, Error> {
         let _ = (offset, buff);
-        unimplemented!()
+        Err(Error::Fs(NotImplemented("Writing")))
     }
 
     /// Find a file (or directory) with its `name`
-    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, ()> {
+    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, Error> {
         let _ = name;
-        unimplemented!()
+        Err(Error::Fs(NotImplemented("Finding")))
     }
 
     /// List all files in the directory.
-    fn list(&self) -> Result<Vec<&str>, ()> {
-        unimplemented!()
+    fn list(&self) -> Result<Vec<&str>, Error> {
+        Err(Error::Fs(NotImplemented("Listing")))
     }
 }

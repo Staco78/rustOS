@@ -1,4 +1,7 @@
-use crate::utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex};
+use crate::{
+    error::{Error, MemoryError::*},
+    utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex},
+};
 
 use super::{
     address::Physical, constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress,
@@ -268,7 +271,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    fn find_pages(&self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
+    fn find_pages(&self, count: usize) -> Result<PhysicalAddress, Error> {
         debug_assert!(count > 0);
 
         let mut index = 0;
@@ -277,7 +280,7 @@ impl PhysicalMemoryManager {
         loop {
             let bitmap = &self.bitmap[index..];
             let first_free =
-                Self::find_first_zero(bitmap).ok_or(PhysicalAllocError::OutOfMemory)?;
+                Self::find_first_zero(bitmap).ok_or(Error::Memory(OutOfPhysicalMemory))?;
             match Self::can_alloc(&bitmap[first_free..], count, off) {
                 Ok(off) => return Ok(PhysicalAddress::new(first_free * u8::BITS as usize + off)),
                 Err(e) => {
@@ -288,7 +291,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, PhysicalAllocError> {
+    pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, Error> {
         let pages = self.find_pages(count)?;
         self.set_used_range(pages.addr(), count);
         trace!(target: "pmm", "Alloc {} page(s) at {}", count, (pages * PAGE_SIZE));
@@ -300,11 +303,6 @@ impl PhysicalMemoryManager {
         trace!(target: "pmm", "Dealloc {} page(s) at {}", count, addr);
         self.set_free_range(addr.addr() / PAGE_SIZE, count);
     }
-}
-
-#[derive(Debug)]
-pub enum PhysicalAllocError {
-    OutOfMemory,
 }
 
 pub struct PmmPageAllocator<'a> {

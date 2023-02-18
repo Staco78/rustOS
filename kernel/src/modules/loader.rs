@@ -3,7 +3,7 @@ use core::{
     slice,
 };
 
-use alloc::vec::Vec;
+use alloc::{string::ToString, vec::Vec};
 use elf::{
     abi::{
         R_AARCH64_ABS64, R_AARCH64_CALL26, R_AARCH64_GLOB_DAT, R_AARCH64_JUMP26,
@@ -17,17 +17,18 @@ use elf::{
 use log::warn;
 
 use crate::{
-    fs::{self, ReadError},
+    error::{Error, ModuleLoadError::*},
+    fs::{self},
     memory::{
-        vmm::{vmm, AllocError, FindSpaceError, MemoryUsage},
+        vmm::{vmm, MemoryUsage},
         AddrSpaceSelector, VirtualAddress, PAGE_SHIFT, PAGE_SIZE,
     },
     symbols,
     utils::sizes::{SIZE_128M, SIZE_1M},
 };
 
-pub fn load(path: &str) -> Result<(), ModuleLoadError> {
-    let file = fs::get_node(path).map_err(|_| ModuleLoadError::NotFound)?;
+pub fn load(path: &str) -> Result<(), Error> {
+    let file = fs::get_node(path)?;
 
     let buff = file.read_to_end_vec(0)?;
     let loader = Loader::new(&buff)?;
@@ -36,44 +37,10 @@ pub fn load(path: &str) -> Result<(), ModuleLoadError> {
     Ok(())
 }
 
-#[derive(Debug)]
-pub enum ModuleLoadError {
-    NotFound,
-    InvalidFileType,
-    ElfParsingError(elf::ParseError),
-    LoadingError(&'static str),
-    IoError,
-    OutOfMemory,
-    KernelSymbolNotFound,
-    MissingModuleSymbol(&'static str),
-    ModuleInitFailed,
-}
-
-impl From<ReadError> for ModuleLoadError {
+impl From<elf::ParseError> for Error {
     #[inline]
-    fn from(_: ReadError) -> Self {
-        Self::IoError
-    }
-}
-
-impl From<elf::ParseError> for ModuleLoadError {
-    #[inline]
-    fn from(e: elf::ParseError) -> Self {
-        Self::ElfParsingError(e)
-    }
-}
-
-impl From<FindSpaceError> for ModuleLoadError {
-    #[inline]
-    fn from(_: FindSpaceError) -> Self {
-        Self::OutOfMemory
-    }
-}
-
-impl From<AllocError> for ModuleLoadError {
-    #[inline]
-    fn from(_: AllocError) -> Self {
-        Self::OutOfMemory
+    fn from(_: elf::ParseError) -> Self {
+        Self::ModuleLoad(ElfParsingError)
     }
 }
 
@@ -83,16 +50,16 @@ struct Loader<'a> {
 }
 
 impl<'a> Loader<'a> {
-    fn new(data: &'a [u8]) -> Result<Self, ModuleLoadError> {
+    fn new(data: &'a [u8]) -> Result<Self, Error> {
         let file = ElfBytes::minimal_parse(data)?;
         Ok(Self { file, data })
     }
 
-    fn load(&self) -> Result<(), ModuleLoadError> {
+    fn load(&self) -> Result<(), Error> {
         let sections_iter = self
             .file
             .section_headers()
-            .ok_or(ModuleLoadError::LoadingError("No sections"))?;
+            .ok_or(Error::ModuleLoad(LoadingError("No sections")))?;
         let mut sections = Vec::with_capacity(sections_iter.len());
         sections.extend(sections_iter.iter());
         drop(sections_iter);
@@ -102,7 +69,7 @@ impl<'a> Loader<'a> {
         let (symtab, strtab) = self
             .file
             .symbol_table()?
-            .ok_or(ModuleLoadError::LoadingError("No symtab"))?;
+            .ok_or(Error::ModuleLoad(LoadingError("No symtab")))?;
 
         let mut symbols = Vec::with_capacity(symtab.len());
         symbols.extend(symtab.iter());
@@ -119,7 +86,7 @@ impl<'a> Loader<'a> {
                         symbol.st_value = sym as u64;
                     } else {
                         warn!("Loading module: symbol {} not found", name);
-                        return Err(ModuleLoadError::KernelSymbolNotFound);
+                        return Err(Error::ModuleLoad(KernelSymbolNotFound(name.into())));
                     }
                 }
             } else if symbol.st_shndx < 0xFF00 {
@@ -161,7 +128,7 @@ impl<'a> Loader<'a> {
                         if (diff as isize) < -(SIZE_128M as isize)
                             || (diff as isize) >= (SIZE_128M as isize)
                         {
-                            return Err(ModuleLoadError::LoadingError("Symbol too far"));
+                            return Err(Error::ModuleLoad(LoadingError("Symbol too far")));
                         }
                         assert!(diff % 4 == 0);
                         let _ = encode_immediate(instruction, 26, 0, diff as u32 >> 2, false);
@@ -171,7 +138,7 @@ impl<'a> Loader<'a> {
                         if (diff as isize) < -(SIZE_1M as isize)
                             || (diff as isize) >= (SIZE_1M as isize)
                         {
-                            return Err(ModuleLoadError::LoadingError("Symbol too far"));
+                            return Err(Error::ModuleLoad(LoadingError("Symbol too far")));
                         }
                         assert!(diff % 4 == 0);
                         let _ = encode_immediate(instruction, 19, 5, diff as u32 >> 2, false);
@@ -195,21 +162,22 @@ impl<'a> Loader<'a> {
                     R_AARCH64_ABS64 | R_AARCH64_GLOB_DAT => unsafe { *place.as_ptr::<u64>() = val },
                     _ => {
                         warn!("Unknown relocation type ({}) {:?}", rela.r_type, rela);
-                        return Err(ModuleLoadError::LoadingError("Unknown relocation type"));
+                        return Err(Error::ModuleLoad(LoadingError("Unknown relocation type")));
                     }
                 }
             }
         }
 
-        let init = unsafe { mem::transmute::<usize, fn() -> Result<(), ()>>(init.unwrap().addr()) };
-        init().map_err(|_| ModuleLoadError::ModuleInitFailed)?;
+        let init =
+            unsafe { mem::transmute::<usize, fn() -> Result<(), Error>>(init.unwrap().addr()) };
+        init().map_err(|e| Error::ModuleLoad(ModuleInitFailed(e.to_string())))?;
 
         Ok(())
     }
 
     /// Load all the sections marked with `SHF_ALLOC` into module space memory
     /// Update each `sh_addr` to where the section is in memory.
-    fn load_sections(&self, sections: &mut Vec<SectionHeader>) -> Result<(), ModuleLoadError> {
+    fn load_sections(&self, sections: &mut Vec<SectionHeader>) -> Result<(), Error> {
         let mut alloc_size = 0usize;
         for section in sections.iter() {
             if (section.sh_flags & SHF_ALLOC as u64) != 0 {
