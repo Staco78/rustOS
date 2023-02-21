@@ -1,15 +1,15 @@
 use core::{fmt::Debug, mem::MaybeUninit, slice};
 
-use alloc::vec::Vec;
+use alloc::{vec::Vec, string::String};
 
 use crate::{
     error::{Error, FsError::*},
     utils::smart_ptr::SmartPtr,
 };
 
-pub type FileNodeRef = SmartPtr<dyn FileNode>;
+pub type FsNodeRef = SmartPtr<dyn FsNode>;
 
-pub trait FileNode: Send + Sync + Debug {
+pub trait FsNode: Send + Sync + Debug {
     /// Return the size of the file in bytes.
     fn size(&self) -> Result<usize, Error> {
         Err(Error::Fs(NotImplemented("Getting size")))
@@ -39,7 +39,7 @@ pub trait FileNode: Send + Sync + Debug {
         };
 
         let buff_init = self.read(offset, buff)?;
-        assert!(buff_init.len() <= size);
+        debug_assert!(buff_init.len() <= size);
 
         // Safety: elements are initalized by the file read
         unsafe { vec.set_len(buff_init.len()) };
@@ -47,15 +47,18 @@ pub trait FileNode: Send + Sync + Debug {
         Ok(vec)
     }
 
-    #[inline]
     fn read_to_end_vec(&self, offset: usize) -> Result<Vec<u8>, Error> {
-        // TODO: remove unwrap
-        if offset >= self.size().unwrap() {
+        if offset >= self.size()? {
             return Ok(Vec::new());
         }
 
-        let to_read = self.size().unwrap() - offset;
+        let to_read = self.size()? - offset;
         self.read_vec(offset, to_read)
+    }
+
+    #[inline]
+    fn read_to_end_string(&self) -> Result<String, Error> {
+        String::from_utf8(self.read_to_end_vec(0)?).map_err(|_| Error::CustomStr("Not UTF-8"))
     }
 
     /// The size to write is the len of `buff`.
@@ -69,13 +72,13 @@ pub trait FileNode: Send + Sync + Debug {
     }
 
     /// Find a file (or directory) with its `name`
-    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, Error> {
+    fn find(&self, name: &str) -> Result<Option<FsNodeRef>, Error> {
         let _ = name;
         Err(Error::Fs(NotImplemented("Finding")))
     }
 
     /// List all files in the directory.
-    fn list(&self) -> Result<Vec<&str>, Error> {
+    fn list(&self) -> Result<Vec<String>, Error> {
         Err(Error::Fs(NotImplemented("Listing")))
     }
 }

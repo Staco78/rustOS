@@ -16,6 +16,9 @@
 #![feature(coerce_unsized)]
 #![feature(new_uninit)]
 #![feature(error_in_core)]
+#![feature(is_some_and)]
+#![feature(maybe_uninit_as_bytes)]
+#![feature(vec_into_raw_parts)]
 
 pub mod acpi;
 pub mod cpu;
@@ -139,6 +142,7 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
-    modules::load("/initrd/hello.kmod").unwrap();
+    modules::load("/initrd/ext2.kmod").unwrap();
+    fs::mount_device("/", fs::get_node("/initrd/ext2.disk").unwrap(), "ext2").unwrap();
     exit(0);
 }

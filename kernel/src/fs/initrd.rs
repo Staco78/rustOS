@@ -1,6 +1,6 @@
 use alloc::{
     sync::{Arc, Weak},
-    vec::Vec,
+    vec::Vec, string::{String, ToString},
 };
 use core::{
     ffi::CStr,
@@ -20,7 +20,7 @@ use crate::{
 
 use super::{
     drivers::{self, register_driver},
-    node::{FileNode, FileNodeRef},
+    node::{FsNode, FsNodeRef},
     vfs,
 };
 
@@ -105,7 +105,7 @@ impl drivers::Driver for Driver {
         "tar"
     }
 
-    fn get_root_node(&self, device: &FileNodeRef) -> Result<FileNodeRef, Error> {
+    fn get_root_node(&self, device: &FsNodeRef) -> Result<FsNodeRef, Error> {
         // TODO: remove unwrap
         let data = device.read_to_end_vec(0).unwrap();
         // Safety: No filesystem deletion so `data` never dropped.
@@ -129,7 +129,7 @@ impl FileSystem {
         let files = SmartPtrBuff::from_iter(iter);
         let root_node_buff = SmartPtrSizedBuff::new(false);
         root_node_buff
-            .create_new(RootNode { fs: self_weak })
+            .insert(RootNode { fs: self_weak })
             .expect("Not enought space in buff");
 
         Self {
@@ -148,11 +148,17 @@ struct RootNode {
     fs: Weak<FileSystem>,
 }
 
-impl FileNode for RootNode {
-    fn find(&self, name: &str) -> Result<Option<FileNodeRef>, Error> {
+impl FsNode for RootNode {
+    fn find(&self, name: &str) -> Result<Option<FsNodeRef>, Error> {
         let fs = self.fs.upgrade().unwrap();
         let file = fs.files.iter().find(|f| f.name == name);
-        Ok(file.map(|f| f as FileNodeRef))
+        Ok(file.map(|f| f as FsNodeRef))
+    }
+
+    fn list(&self) -> Result<Vec<String>, Error> {
+        let fs = self.fs.upgrade().unwrap();
+        let files = fs.files.iter().map(|f| f.name.to_string()).collect();
+        Ok(files)
     }
 }
 
@@ -168,7 +174,7 @@ impl Node {
     }
 }
 
-impl FileNode for Node {
+impl FsNode for Node {
     fn size(&self) -> Result<usize, Error> {
         Ok(self.data.len())
     }

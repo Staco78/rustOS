@@ -74,10 +74,19 @@ impl log::Log for KernelLogger {
             }
 
             let target = record.target();
+
+            if let Some(path) = record.file() && path.starts_with("modules/")
+            {
+                if let Some(module) = record.module_path().and_then(|path| path.split("::").next()) {
+                    write!(output, "{}: ", module).unwrap();
+                }
+            }
             // dont't show automatic target
-            if !target.contains("::") && level != Level::Info {
+            else if !target.contains("::") && level != Level::Info
+            {
                 write!(output, "{}: ", target).unwrap();
             }
+
             writeln!(output, "{}", record.args()).unwrap();
             output.write_str("\x1B[0m").unwrap(); // reset mode and color
 

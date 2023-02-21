@@ -4,8 +4,11 @@ mod drivers;
 mod initrd;
 pub mod path;
 mod vfs;
+mod utils;
 
 pub use vfs::*;
+pub use drivers::*;
+pub use utils::*;
 
 #[inline]
 /// Safety: `initrd_ptr` and `initrd_len` should be valid.

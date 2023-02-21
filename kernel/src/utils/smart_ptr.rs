@@ -1,4 +1,5 @@
 use core::{
+    fmt::Debug,
     marker::{PhantomData, Unsize},
     mem::{self, MaybeUninit},
     ops::{CoerceUnsized, Deref},
@@ -26,7 +27,6 @@ impl<T> SmartPtrInner<T> {
     }
 }
 
-#[derive(Debug)]
 pub struct SmartPtr<T: ?Sized> {
     ptr: NonNull<SmartPtrInner<T>>,
 }
@@ -64,6 +64,13 @@ impl<T: ?Sized> Drop for SmartPtr<T> {
     }
 }
 
+impl<T: ?Sized + Debug> Debug for SmartPtr<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let inner = unsafe { self.ptr.as_ref() };
+        f.debug_tuple("SmartPtr").field(&&inner.data).finish()
+    }
+}
+
 pub trait SmartBuff<T> {
     // Safety: don't change the ref_count value.
     unsafe fn data<'a>(&'a self) -> &'a [SmartPtrInner<MaybeUninit<T>>];
@@ -79,9 +86,10 @@ pub trait SmartBuff<T> {
     }
 
     /// Store `value` if a place is found and return it index and a `SmartPtr` over it.
-    fn create_new(&self, value: T) -> Option<(usize, SmartPtr<T>)> {
+    /// Return `Err(value)` if buff full.
+    fn insert(&self, value: T) -> Result<(usize, SmartPtr<T>), T> {
         let data = unsafe { self.data() };
-        let (i, inner) = data.iter().enumerate().find(|(_, d)| {
+        let r = data.iter().enumerate().find(|(_, d)| {
             let mut c = d.ref_count.lock();
             let value = *c;
             if value == 0 {
@@ -91,7 +99,13 @@ pub trait SmartBuff<T> {
             } else {
                 false
             }
-        })?;
+        });
+        
+        let (i, inner) = if let Some((i, inner)) = r {
+            (i, inner)
+        } else {
+            return Err(value);
+        };
 
         let inner: &SmartPtrInner<T> = unsafe {
             // Safety: we can get a mutable reference because we checked that there is
@@ -111,7 +125,7 @@ pub trait SmartBuff<T> {
         // Safety: it's a ref so the ptr is valid and non-null.
         let ptr = unsafe { NonNull::new_unchecked(inner as *const _ as *mut SmartPtrInner<T>) };
         let ptr = SmartPtr { ptr };
-        Some((i, ptr))
+        Ok((i, ptr))
     }
 
     /// Return a `SmartPtr` over the value at `index` if it exist another `SmartPtr` over it.

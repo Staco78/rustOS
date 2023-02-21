@@ -19,6 +19,9 @@ pub enum Error {
 
     #[error("Memory error: {0}")]
     Memory(MemoryError),
+
+    #[error("IO error")]
+    IoError,
 }
 
 impl Debug for Error {
@@ -40,6 +43,9 @@ pub enum FsError {
 
     #[error("{0} isn't implemented")]
     NotImplemented(&'static str),
+
+    #[error("Invalid filesystem")]
+    InvalidFS,
 }
 
 #[derive(Error, Debug, Clone)]

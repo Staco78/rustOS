@@ -9,9 +9,9 @@ use crate::{
     fs::{drivers::get_driver_for_type, path::Path},
 };
 
-use super::node::FileNodeRef;
+use super::node::FsNodeRef;
 
-pub fn get_node<P>(path: P) -> Result<FileNodeRef, Error>
+pub fn get_node<P>(path: P) -> Result<FsNodeRef, Error>
 where
     P: AsRef<Path>,
 {
@@ -43,12 +43,15 @@ where
 #[derive(Debug, Clone)]
 pub struct MountPoint {
     pub path: &'static Path,
-    pub root_node: FileNodeRef,
+    pub root_node: FsNodeRef,
 }
 
 static MOUNTPOINTS: RwLock<Vec<MountPoint>> = RwLock::new(Vec::new());
 
-pub fn mount_device(path: &'static Path, device: FileNodeRef, fs_type: &str) -> Result<(), Error> {
+pub fn mount_device<S>(path: S, device: FsNodeRef, fs_type: &str) -> Result<(), Error>
+where
+    S: Into<&'static Path>,
+{
     let driver = match get_driver_for_type(fs_type) {
         Some(driver) => driver,
         None => {
@@ -63,7 +66,7 @@ pub fn mount_device(path: &'static Path, device: FileNodeRef, fs_type: &str) -> 
     Ok(())
 }
 
-pub fn mount_node<S>(path: S, node: FileNodeRef) -> Result<(), Error>
+pub fn mount_node<S>(path: S, node: FsNodeRef) -> Result<(), Error>
 where
     S: Into<&'static Path>,
 {
