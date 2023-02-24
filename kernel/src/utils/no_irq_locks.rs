@@ -33,7 +33,6 @@ unsafe impl<R: RawMutex> RawMutex for NoIrqMutexRaw<R> {
 
     #[inline(always)]
     unsafe fn unlock(&self) {
-        // debug!("unlock");
         self.0.unlock();
         restore_irqs_depth();
     }

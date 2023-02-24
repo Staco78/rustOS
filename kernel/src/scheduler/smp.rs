@@ -1,6 +1,5 @@
 use core::{
     arch::global_asm,
-    ffi::CStr,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -26,17 +25,16 @@ global_asm!(include_str!("ap_start.S"));
 
 fn dt_iter_cpus<CB>(mut cb: CB)
 where
-    CB: FnMut(u32, &Node),
+    CB: FnMut(u32, Node),
 {
-    let cpus = device_tree::get_node("cpus").expect("No cpus node in device tree");
+    let cpus = device_tree::get_node_weak("/cpus").expect("No cpus node in device tree");
     let (address_cells, size_cells) = (cpus.address_cells(), cpus.size_cells());
     assert!(address_cells == 1 && size_cells == 0); // we don't support others cells size
-    let cpu_nodes = cpus.get_children_by_prefix("cpu@").unwrap();
+    let cpu_nodes = cpus.children().filter(|c| c.name().starts_with("cpu@"));
 
-    for (_, cpu) in cpu_nodes {
+    for cpu in cpu_nodes {
         let reg = cpu.get_property("reg").unwrap();
-        assert!(reg.len() == 4);
-        let id = u32::from_be_bytes(reg.try_into().unwrap());
+        let id = reg.buff().consume_be_u32().unwrap();
         cb(id, cpu);
     }
 }
@@ -64,17 +62,16 @@ pub fn start_cpus() {
     dt_iter_cpus(|id, cpu| {
         let is_main_cpu = id == device_tree::get_boot_cpu_id();
         if !is_main_cpu {
-            start_cpu(id, cpu, &mut low_addr_space);
+            start_cpu(id, &cpu, &mut low_addr_space);
         }
     })
 }
 
 fn start_cpu(id: u32, node: &device_tree::Node, low_addr_space: &mut VirtualAddressSpace) {
-    let enable_method = node.get_property("enable-method").unwrap();
-    let enable_method = CStr::from_bytes_with_nul(enable_method)
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let enable_method = node
+        .get_property("enable-method")
+        .expect("No 'enable-method' property in cpu node");
+    let enable_method = enable_method.buff().consume_str().unwrap();
     match enable_method {
         "psci" => start_cpu_psci(id, low_addr_space),
         _ => unimplemented!("Unknown enable method"),

@@ -1,4 +1,4 @@
-use core::{arch::global_asm, ffi::CStr, num::NonZeroU32};
+use core::{arch::global_asm, num::NonZeroU32};
 
 use log::warn;
 
@@ -11,7 +11,7 @@ struct PsciInfos {
 static mut INFOS: Option<PsciInfos> = None;
 
 pub fn init() {
-    let dt_node = match device_tree::get_node("psci") {
+    let dt_node = match device_tree::get_node("/psci") {
         Some(node) => node,
         None => {
             warn!(target: "psci", "Init failed: no psci node in the device tree");
@@ -20,7 +20,7 @@ pub fn init() {
     };
 
     let method = match dt_node.get_property("method") {
-        Some(method) => CStr::from_bytes_with_nul(method).unwrap().to_str().unwrap(),
+        Some(method) => method.buff().consume_str().unwrap(),
         None => {
             warn!(target: "psci", "Init failed: no method property in device tree");
             return;
@@ -37,9 +37,8 @@ pub fn init() {
             None
         },
         |p| {
-            assert!(p.len() == 4);
-            let v = u32::from_be_bytes(p.try_into().unwrap());
-            Some(NonZeroU32::new(v).unwrap())
+            let val = p.buff().consume_be_u32().unwrap();
+            Some(NonZeroU32::new(val).unwrap())
         },
     );
 

@@ -8,9 +8,10 @@ use std::{
 };
 
 use actions::{
-    wait_commands, ActionRef, BuildModuleAction, CargoCmdAction, ClearDirAction, CommandAction,
-    CopyFileAction, DeleteAction, ExtractArchiveAction, FetchKernelLibsMetaAction,
-    KernelRelinkAction, MkdirAction, NoopAction, SymbolsExtractAction, TarCreateArchiveAction, BackgroundCommandAction,
+    wait_commands, ActionRef, BackgroundCommandAction, BuildModuleAction, CargoCmdAction,
+    ClearDirAction, CommandAction, CopyFileAction, DeleteAction, ExtractArchiveAction,
+    FetchKernelLibsMetaAction, KernelRelinkAction, MkdirAction, NoopAction, SymbolsExtractAction,
+    TarCreateArchiveAction,
 };
 use console::style;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -34,6 +35,31 @@ lazy_static! {
             &style("✔").green().to_string(),
         ]);
 }
+
+const QEMU_ARGS: &'static [&'static str] = &[
+    "-machine",
+    "virt",
+    "-cpu",
+    "max",
+    "-drive",
+    "if=pflash,format=raw,file=QEMU_CODE.fd,readonly=on",
+    "-drive",
+    "if=pflash,format=raw,file=QEMU_VARS.fd",
+    "-drive",
+    "format=raw,file=fat:rw:root",
+    "-net",
+    "none",
+    "-monitor",
+    "stdio",
+    "-smp",
+    "4",
+    "-m",
+    "256",
+    "-drive",
+    "file=initrd/ext2.disk,if=none,id=drv0,format=raw",
+    "-device",
+    "nvme,drive=drv0,serial=1234",
+];
 
 const MODULE_LIST: &[&str] = &["hello", "ext2"];
 
@@ -66,6 +92,7 @@ fn main() {
         "clean" => action_clean(),
         "check" => action_check(),
         "debug" => action_debug(release),
+        "dtb" => action_dtb(),
         _ => {
             print_error_and_exit(format!("Unknown command {}", params[0]));
         }
@@ -212,33 +239,7 @@ fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
 fn action_run(release: bool) -> Result<ActionRef, Box<dyn Error>> {
     let build_action = action_build(release)?;
     let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
-    cmd.args(&[
-        "-machine",
-        "virt",
-        "-cpu",
-        "max",
-        "-drive",
-        "if=pflash,format=raw,file=QEMU_CODE.fd,readonly=on",
-        "-drive",
-        "if=pflash,format=raw,file=QEMU_VARS.fd",
-        "-drive",
-        &format!(
-            "format=raw,file=fat:rw:{}",
-            Path::new("root")
-                .canonicalize()?
-                .as_os_str()
-                .to_str()
-                .unwrap()
-        ),
-        "-net",
-        "none",
-        "-monitor",
-        "stdio",
-        "-smp",
-        "4",
-        "-m",
-        "256",
-    ]);
+    cmd.args(QEMU_ARGS);
     Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
 }
 
@@ -302,34 +303,16 @@ fn action_check() -> Result<ActionRef, Box<dyn Error>> {
 fn action_debug(release: bool) -> Result<ActionRef, Box<dyn Error>> {
     let build_action = action_build(release)?;
     let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
-    cmd.args(&[
-        "-machine",
-        "virt",
-        "-cpu",
-        "max",
-        "-drive",
-        "if=pflash,format=raw,file=QEMU_CODE.fd,readonly=on",
-        "-drive",
-        "if=pflash,format=raw,file=QEMU_VARS.fd",
-        "-drive",
-        &format!(
-            "format=raw,file=fat:rw:{}",
-            Path::new("root")
-                .canonicalize()?
-                .as_os_str()
-                .to_str()
-                .unwrap()
-        ),
-        "-net",
-        "none",
-        "-monitor",
-        "stdio",
-        "-smp",
-        "4",
-        "-m",
-        "256",
-        "-s",
-        "-S",
-    ]);
+    cmd.args(QEMU_ARGS);
+    cmd.arg("-s");
+    cmd.arg("-S");
     Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
+}
+
+fn action_dtb() -> Result<ActionRef, Box<dyn Error>> {
+    let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
+    cmd.args(QEMU_ARGS);
+    cmd.arg("-machine");
+    cmd.arg("dumpdtb=qemu.dtb");
+    Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![]).into())
 }

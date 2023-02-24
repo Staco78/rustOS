@@ -3,78 +3,60 @@ mod rsdp;
 pub mod sdt;
 pub mod spcr;
 
-use crate::{acpi::sdt::Signature, memory::PhysicalAddress, error::Error};
+use crate::{
+    acpi::sdt::Signature, error::Error, memory::PhysicalAddress,
+    utils::sync_once_cell::SyncOnceCell,
+};
 
-use core::{mem::MaybeUninit, slice};
+use core::slice;
 
 use static_assertions::assert_eq_size;
 use uefi::table::cfg::{ConfigTableEntry, ACPI2_GUID, ACPI_GUID};
 
-use self::{
-    rsdp::{Rsdp, RsdtEntriesIterator, XsdtEntriesIterator},
-    sdt::SdtHeader,
-};
+use self::rsdp::{AcpiIterator, Rsdp};
 
-pub struct AcpiParser {
-    rsdt_iter: MaybeUninit<RsdtEntriesIterator>,
-    xsdt_iter: MaybeUninit<XsdtEntriesIterator>,
-    revision: u8,
+static RSDP: SyncOnceCell<Rsdp> = SyncOnceCell::new();
+
+pub unsafe fn init(tables: &[ConfigTableEntry]) -> Result<(), Error> {
+    let mut acpi = None;
+    let mut acpi2 = None;
+    for table in tables {
+        if table.guid == ACPI_GUID {
+            acpi = Some(
+                PhysicalAddress::new(table.address.addr())
+                    .to_virt()
+                    .as_ptr(),
+            );
+        } else if table.guid == ACPI2_GUID {
+            acpi2 = Some(
+                PhysicalAddress::new(table.address.addr())
+                    .to_virt()
+                    .as_ptr(),
+            );
+        }
+    }
+
+    let rsdp = if let Some(acpi2) = acpi2 {
+        unsafe { Rsdp::from_ptr(acpi2).unwrap() }
+    } else if let Some(acpi) = acpi {
+        unsafe { Rsdp::from_ptr(acpi).unwrap() }
+    } else {
+        return Err(Error::CustomStr("ACPI load: RDSP not found"));
+    };
+
+    unsafe { RSDP.set(rsdp).expect("Acpi already inited") };
+
+    Ok(())
 }
 
-impl AcpiParser {
-    pub fn parse_tables(tables: &[ConfigTableEntry]) -> Result<Self, Error> {
-        let mut acpi = None;
-        let mut acpi2 = None;
-        for table in tables {
-            if table.guid == ACPI_GUID {
-                acpi = Some(
-                    PhysicalAddress::new(table.address.addr())
-                        .to_virt()
-                        .as_ptr(),
-                );
-            } else if table.guid == ACPI2_GUID {
-                acpi2 = Some(
-                    PhysicalAddress::new(table.address.addr())
-                        .to_virt()
-                        .as_ptr(),
-                );
-            }
-        }
+#[inline]
+pub fn iter_tables() -> Option<AcpiIterator> {
+    RSDP.get().and_then(|rsdp| Some(rsdp.iter()))
+}
 
-        let rsdp = if let Some(acpi2) = acpi2 {
-            unsafe { Rsdp::from_ptr(acpi2).unwrap() }
-        } else if let Some(acpi) = acpi {
-            unsafe { Rsdp::from_ptr(acpi).unwrap() }
-        } else {
-            return Err(Error::CustomStr("ACPI load: RDSP not found"));
-        };
-
-        let (rsdt_iter, xsdt_iter) = if rsdp.revision() > 0 {
-            (MaybeUninit::uninit(), MaybeUninit::new(rsdp.xsdt_tables()))
-        } else {
-            (MaybeUninit::new(rsdp.rsdt_tables()), MaybeUninit::uninit())
-        };
-
-        Ok(Self {
-            rsdt_iter,
-            xsdt_iter,
-            revision: rsdp.revision(),
-        })
-    }
-
-    #[inline]
-    fn get_iter(&mut self) -> &mut dyn Iterator<Item = *const SdtHeader> {
-        unsafe {
-            if self.revision > 0 {
-                self.xsdt_iter.assume_init_mut() as &mut dyn Iterator<Item = *const SdtHeader>
-            } else {
-                self.rsdt_iter.assume_init_mut() as &mut dyn Iterator<Item = *const SdtHeader>
-            }
-        }
-    }
-
-    pub unsafe fn get_table<T>(&mut self, signature: Signature) -> Option<&T> {
-        for table in self.get_iter() {
+pub unsafe fn get_table<T>(signature: Signature) -> Option<&'static T> {
+    if let Some(iter) = iter_tables() {
+        for table in iter {
             if unsafe { (*table).signature == signature } {
                 let r = (table as *const T).as_ref()?;
                 let bytes = unsafe {
@@ -85,8 +67,8 @@ impl AcpiParser {
                 return Some(r);
             }
         }
-        None
     }
+    None
 }
 
 #[derive(Debug, Clone, Copy)]

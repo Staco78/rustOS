@@ -109,6 +109,7 @@ dependencies = [
 name = "kernel"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "cfg-if",
  "cortex-a",
  "crossbeam-utils",

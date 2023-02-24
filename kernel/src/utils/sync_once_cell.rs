@@ -15,15 +15,15 @@ impl<T> SyncOnceCell<T> {
         unsafe { &*self.inner.get() }.as_ref()
     }
 
-    // safety: don't call this at same time on different threads
+    /// Safety: don't call this at same time on different threads
     pub unsafe fn set(&self, value: T) -> Result<(), T> {
-        // SAFETY: Safe because we cannot have overlapping mutable borrows
+        // Safety: Safe because we cannot have overlapping mutable borrows
         let slot = unsafe { &*self.inner.get() };
         if slot.is_some() {
             return Err(value);
         }
 
-        // SAFETY: This is the only place where we set the slot, no races
+        // Safety: This is the only place where we set the slot, no races
         // due to reentrancy/concurrency are possible, and we've
         // checked that slot is currently `None`, so this write
         // maintains the `inner`'s invariant.

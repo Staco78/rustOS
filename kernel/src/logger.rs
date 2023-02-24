@@ -22,6 +22,7 @@ const TARGET_BLACKLIST_TRACE: &[&str] = &[
     "scheduler",
     "timer",
     "smp",
+    "fs",
 ];
 
 impl log::Log for KernelLogger {

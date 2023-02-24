@@ -19,8 +19,10 @@
 #![feature(is_some_and)]
 #![feature(maybe_uninit_as_bytes)]
 #![feature(vec_into_raw_parts)]
+#![feature(assert_matches)]
 
 pub mod acpi;
+pub mod bus;
 pub mod cpu;
 pub mod device_tree;
 pub mod devices;
@@ -38,13 +40,8 @@ pub mod utils;
 
 extern crate alloc;
 
-use core::{
-    fmt::Write,
-    mem::{self, MaybeUninit},
-    slice,
-};
+use core::{fmt::Write, mem, slice};
 
-use acpi::AcpiParser;
 use cortex_a::registers::{CurrentEL, DAIF};
 use devices::pl011_uart;
 use interrupts::exceptions;
@@ -58,10 +55,10 @@ use crate::{
         sdt::Signature,
         spcr::{self, Spcr},
     },
+    bus::pcie,
     scheduler::exit,
 };
 
-pub static mut ACPI_TABLES: MaybeUninit<AcpiParser> = MaybeUninit::uninit();
 #[export_name = "start"]
 #[no_mangle]
 extern "C" fn main(
@@ -89,18 +86,20 @@ extern "C" fn main(
     ); // assert expections are disabled
     exceptions::init();
 
+    let dtb = unsafe { slice::from_raw_parts(dtb_ptr.to_virt().as_ptr(), dtb_len) };
+    device_tree::init(dtb).expect("Dtb init failed");
+
     let config_tables = unsafe {
         slice::from_raw_parts(
             config_tables_ptr.to_virt().as_ptr::<ConfigTableEntry>(),
             config_table_len,
         )
     };
-    unsafe { ACPI_TABLES.write(AcpiParser::parse_tables(config_tables).unwrap()) };
+    unsafe { acpi::init(config_tables).unwrap() };
+
+    // TODO: move this to another file
     let mut console_writer = unsafe {
-        if let Some(table) = ACPI_TABLES
-            .assume_init_read()
-            .get_table::<Spcr>(Signature::SPCR)
-        {
+        if let Some(table) = acpi::get_table::<Spcr>(Signature::SPCR) {
             if (*table).get_serial_type() == spcr::SerialType::Pl011UART {
                 Some(pl011_uart::Pl011::new(
                     PhysicalAddress::new((*table).address.address as usize).to_virt(),
@@ -125,14 +124,8 @@ extern "C" fn main(
     memory::init(memory_map);
     unsafe { fs::init(initrd_ptr, initrd_len) };
     symbols::init();
-    device_tree::load(dtb_ptr, dtb_len);
     psci::init();
-    interrupts::init_chip(unsafe {
-        ACPI_TABLES
-            .assume_init_mut()
-            .get_table(Signature::MADT)
-            .unwrap()
-    });
+    interrupts::init_chip(unsafe { acpi::get_table(Signature::MADT).expect("No MADT table") });
 
     {
         scheduler::register_cpus();
@@ -144,5 +137,8 @@ extern "C" fn main(
 fn later_main() -> ! {
     modules::load("/initrd/ext2.kmod").unwrap();
     fs::mount_device("/", fs::get_node("/initrd/ext2.disk").unwrap(), "ext2").unwrap();
+
+    pcie::init();
+
     exit(0);
 }

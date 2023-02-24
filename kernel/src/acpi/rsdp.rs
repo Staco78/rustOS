@@ -1,6 +1,6 @@
-use core::{ffi::c_void, mem::size_of, slice};
+use core::{assert_matches::debug_assert_matches, mem::size_of, ptr, slice};
 
-use crate::{memory::PhysicalAddress, error::Error};
+use crate::{error::Error, memory::PhysicalAddress};
 
 use super::sdt::SdtHeader;
 
@@ -23,23 +23,20 @@ pub struct Rsdp {
     reserved: [u8; 3],
 }
 
-
-
 impl Rsdp {
-    pub unsafe fn from_ptr(ptr: *const c_void) -> Result<&'static Self, Error> {
-        let s = ptr as *const Self;
-        let s = &*s;
+    pub unsafe fn from_ptr(ptr: *const Self) -> Result<Self, Error> {
+        let s: Self = *ptr;
         if s.signature != RSDP_SIGNATURE {
             return Err(Error::CustomStr("Invalid RSDP signature"));
         }
 
-        let length = if s.revision > 0 {
+        let length = if s.revision > 1 {
             s.length as usize
         } else {
             RSDP_V1_SIZE
         };
 
-        let bytes = unsafe { slice::from_raw_parts(ptr as usize as *const u8, length) };
+        let bytes = unsafe { slice::from_raw_parts(ptr as *const u8, length) };
         let sum = bytes.iter().fold(0u8, |sum, &byte| sum.wrapping_add(byte));
 
         if sum != 0 {
@@ -54,25 +51,29 @@ impl Rsdp {
         self.revision
     }
 
-    pub fn rsdt_tables(&self) -> RsdtEntriesIterator {
-        assert!(self.rsdt_ptr != 0);
-        unsafe {
-            RsdtEntriesIterator::new(
-                PhysicalAddress::new(self.rsdt_ptr as usize)
-                    .to_virt()
-                    .as_ptr(),
-            )
-        }
-    }
-
-    pub fn xsdt_tables(&self) -> XsdtEntriesIterator {
-        assert!(self.xsdt_ptr != 0);
-        unsafe {
-            XsdtEntriesIterator::new(
-                PhysicalAddress::new(self.xsdt_ptr as usize)
-                    .to_virt()
-                    .as_ptr(),
-            )
+    pub fn iter(&self) -> AcpiIterator {
+        if self.revision() < 2 {
+            let ptr = PhysicalAddress::new(self.rsdt_ptr as usize)
+                .to_virt()
+                .as_ptr::<Rsdt>();
+            assert!(!ptr.is_null());
+            let header = unsafe { &(*ptr).header };
+            let entries_size = header.length as usize - size_of::<Rsdt>();
+            assert!(entries_size % 4 == 0);
+            let ptr: *const u32 = unsafe { (&(*ptr).entries) as *const _ as *const u32 };
+            let len = entries_size / 4;
+            unsafe { AcpiIterator::new(ptr, len) }
+        } else {
+            let ptr = PhysicalAddress::new(self.xsdt_ptr as usize)
+                .to_virt()
+                .as_ptr::<Xsdt>();
+            assert!(!ptr.is_null());
+            let header = unsafe { &(*ptr).header };
+            let entries_size = header.length as usize - size_of::<Xsdt>();
+            assert!(entries_size % 8 == 0);
+            let ptr: *const u64 = unsafe { (&(*ptr).entries) as *const _ as *const u64 };
+            let len = entries_size / 8;
+            unsafe { AcpiIterator::new(ptr, len) }
         }
     }
 }
@@ -80,68 +81,54 @@ impl Rsdp {
 #[repr(C, packed)]
 struct Rsdt {
     header: SdtHeader,
+    entries: (),
 }
 
-#[derive(Clone, Copy)]
-pub struct RsdtEntriesIterator {
+type Xsdt = Rsdt;
+
+pub struct AcpiIterator {
+    entry_size: usize,
+    entries: *const (),
+    len: usize,
     index: usize,
-    entries: &'static [u32],
 }
 
-impl RsdtEntriesIterator {
-    unsafe fn new(rsdt: *const Rsdt) -> Self {
-        let length = ((*rsdt).header.length as usize - size_of::<Rsdt>()) / size_of::<u32>();
-        let entries = slice::from_raw_parts(rsdt.add(1) as *const u32, length);
-        Self { index: 0, entries }
-    }
-}
-
-impl Iterator for RsdtEntriesIterator {
-    type Item = *const SdtHeader;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let ptr = self.entries.get(self.index).map(|p| {
-            PhysicalAddress::new(*p as usize)
-                .to_virt()
-                .as_ptr::<SdtHeader>() as *const _
-        });
-        self.index += 1;
-        ptr
-    }
-}
-
-#[repr(C, packed)]
-struct Xsdt {
-    header: SdtHeader,
-}
-
-#[derive(Clone, Copy)]
-pub struct XsdtEntriesIterator {
-    index: usize,
-    entries: *const u64,
-    length: usize,
-}
-
-impl XsdtEntriesIterator {
-    unsafe fn new(xsdt: *const Xsdt) -> Self {
-        let length = ((*xsdt).header.length as usize - size_of::<Xsdt>()) / size_of::<u64>();
+impl AcpiIterator {
+    unsafe fn new<T>(ptr: *const T, len: usize) -> Self {
+        let size = size_of::<T>();
+        debug_assert_matches!(size, 4 | 8);
         Self {
+            entry_size: size,
+            entries: ptr as *const (),
+            len,
             index: 0,
-            length,
-            entries: xsdt.add(1) as *const u64,
         }
     }
 }
 
-impl Iterator for XsdtEntriesIterator {
+impl Iterator for AcpiIterator {
     type Item = *const SdtHeader;
-
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.length {
+        if self.index >= self.len {
             return None;
         }
-        let ptr = unsafe { self.entries.add(self.index).read_unaligned() };
+
+        let ptr = unsafe { self.entries.byte_add(self.index * self.entry_size) };
+        let ptr = match self.entry_size {
+            4 => {
+                let value = unsafe { ptr::read_unaligned(ptr as *const u32) };
+                value as usize
+            }
+            8 => {
+                let value = unsafe { ptr::read_unaligned(ptr as *const u64) };
+                value as usize
+            }
+            _ => unreachable!(),
+        };
+
         self.index += 1;
-        Some(PhysicalAddress::new(ptr as usize).to_virt().as_ptr())
+
+        let ptr = PhysicalAddress::new(ptr).to_virt().as_ptr();
+        Some(ptr)
     }
 }
