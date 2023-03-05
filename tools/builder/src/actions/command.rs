@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::PathBuf,
     process::Command,
     str::FromStr,
@@ -47,7 +48,18 @@ impl Action for CommandAction {
     }
 
     fn run(mut self: Box<Self>) -> Result<(), Box<dyn std::error::Error>> {
-        let r = self.cmd.status()?;
+        let r = self.cmd.status();
+        if let Err(e) = r {
+            return if e.kind() == ErrorKind::NotFound {
+                Err(Box::new(Error(format!(
+                    "Command {:?} not found",
+                    self.cmd.get_program()
+                ))))
+            } else {
+                Err(Box::new(e))
+            };
+        }
+        let r = r.unwrap();
         if r.success() {
             Ok(())
         } else {
