@@ -13,6 +13,7 @@ use actions::{
     FetchKernelLibsMetaAction, KernelRelinkAction, MkdirAction, NoopAction, SymbolsExtractAction,
     TarCreateArchiveAction,
 };
+use clap::Parser;
 use console::style;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use lazy_static::{__Deref, lazy_static};
@@ -63,38 +64,33 @@ const QEMU_ARGS: &'static [&'static str] = &[
 
 const MODULE_LIST: &[&str] = &["hello", "ext2"];
 
+#[derive(Parser, Debug)]
+#[command()]
+struct Args {
+    action: String,
+
+    #[arg(short, long)]
+    release: bool,
+
+    #[arg(long)]
+    features: Vec<String>,
+
+    #[arg(long)]
+    no_default_features: bool,
+}
+
 fn main() {
-    let args: Vec<_> = {
-        let mut args = env::args();
-        args.next();
-        args.collect()
-    };
+    let args = Args::parse();
 
-    let params: Vec<_> = args.iter().filter(|e| !e.starts_with("-")).collect();
-    let options: Vec<_> = args.iter().filter(|e| e.starts_with("-")).collect();
-
-    if params.len() > 1 {
-        print_error_and_exit(format!("Invalid parameters count: {}", params.len()));
-    }
-
-    let mut release = false;
-
-    for option in options.iter() {
-        match option.as_str() {
-            "-r" | "--release" => release = true,
-            _ => print_error_and_exit(format!("Invalid option {}", option)),
-        }
-    }
-
-    let action = match params[0].as_str() {
-        "build" => action_build(release),
-        "run" => action_run(release),
-        "clean" => action_clean(),
-        "check" => action_check(),
-        "debug" => action_debug(release),
-        "dtb" => action_dtb(),
+    let action = match args.action.as_str() {
+        "build" => action_build(args),
+        "run" => action_run(args),
+        "clean" => action_clean(args),
+        "check" => action_check(args),
+        "debug" => action_debug(args),
+        "dtb" => action_dtb(args),
         _ => {
-            print_error_and_exit(format!("Unknown command {}", params[0]));
+            print_error_and_exit(format!("Unknown command {}", args.action));
         }
     };
 
@@ -159,15 +155,15 @@ fn run_action(action_ref: ActionRef) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
+fn action_build(args: Args) -> Result<ActionRef, Box<dyn Error>> {
     let create_dirs = MkdirAction::new("build/kernel_objs".into(), vec![]).into();
     let create_dirs: ActionRef = MkdirAction::new("initrd".into(), vec![create_dirs]).into();
     let loader = CargoCmdAction::new(
         "loader/Cargo.toml",
         Some("Loader".into()),
         "build",
-        release,
-        "aarch64-unknown-uefi",
+        args.release,
+        Some("aarch64-unknown-uefi"),
         &[],
         vec![],
     )
@@ -175,23 +171,30 @@ fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
     let loader = CopyFileAction::new(
         format!(
             "target/aarch64-unknown-uefi/{}/loader.efi",
-            if release { "release" } else { "debug" }
+            if args.release { "release" } else { "debug" }
         ),
         "build/boot.efi".into(),
         vec![loader, create_dirs.clone()],
     )
     .into();
+    let features = format!("--features={}", args.features.join(","));
+    let mut kernel_args = vec![features.as_str()];
+    if args.no_default_features {
+        kernel_args.push("--no-default-features");
+    }
     let kernel_build: ActionRef = CargoCmdAction::new(
         "kernel/Cargo.toml",
         Some("Kernel".into()),
         "build",
-        release,
-        Path::new("targets/aarch64-kernel.json")
-            .canonicalize()
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        &[],
+        args.release,
+        Some(
+            Path::new("targets/aarch64-kernel.json")
+                .canonicalize()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+        ),
+        &kernel_args,
         vec![],
     )
     .into();
@@ -201,7 +204,7 @@ fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
         None,
         format!(
             "target/aarch64-kernel/{}/libkernel.a",
-            if release { "release" } else { "debug" }
+            if args.release { "release" } else { "debug" }
         ),
         "build/kernel_objs/".into(),
         vec![clear_kernel_objs, kernel_build.clone()],
@@ -218,10 +221,10 @@ fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
 
     let mut initrd_dependencies = vec![ksymbols];
 
-    let fetch: ActionRef = FetchKernelLibsMetaAction::new(vec![kernel_build], release).into();
+    let fetch: ActionRef = FetchKernelLibsMetaAction::new(vec![kernel_build], args.release).into();
 
     for module in MODULE_LIST.iter().copied().map(String::from) {
-        let module = BuildModuleAction::new(module, release, vec![fetch.clone()]).into();
+        let module = BuildModuleAction::new(module, args.release, vec![fetch.clone()]).into();
         initrd_dependencies.push(module);
     }
 
@@ -236,14 +239,14 @@ fn action_build(release: bool) -> Result<ActionRef, Box<dyn Error>> {
     Ok(NoopAction::new(None, vec![loader, kernel, initrd]).into())
 }
 
-fn action_run(release: bool) -> Result<ActionRef, Box<dyn Error>> {
-    let build_action = action_build(release)?;
+fn action_run(args: Args) -> Result<ActionRef, Box<dyn Error>> {
+    let build_action = action_build(args)?;
     let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
     cmd.args(QEMU_ARGS);
     Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
 }
 
-fn action_clean() -> Result<ActionRef, Box<dyn Error>> {
+fn action_clean(_args: Args) -> Result<ActionRef, Box<dyn Error>> {
     let delete_build = DeleteAction::new("build".into(), vec![]).into();
     let delete_initrd = DeleteAction::new("initrd".into(), vec![]).into();
     let mut cmd = Command::new("cargo");
@@ -259,8 +262,8 @@ fn action_clean() -> Result<ActionRef, Box<dyn Error>> {
     .into())
 }
 
-fn action_check() -> Result<ActionRef, Box<dyn Error>> {
-    fn check(manifest: &str, target: &str, lib: bool) -> Result<(), Box<dyn Error>> {
+fn action_check(_args: Args) -> Result<ActionRef, Box<dyn Error>> {
+    fn check(manifest: &str, target: Option<&str>, lib: bool) -> Result<(), Box<dyn Error>> {
         let args: &[&str] = if lib {
             &["--message-format=json-diagnostic-rendered-ansi", "--lib"]
         } else {
@@ -279,20 +282,26 @@ fn action_check() -> Result<ActionRef, Box<dyn Error>> {
     }
     check(
         "kernel/Cargo.toml",
-        Path::new("targets/aarch64-kernel.json")
-            .canonicalize()?
-            .to_str()
-            .unwrap(),
-        true,
-    )?;
-    check("loader/Cargo.toml", "aarch64-unknown-uefi", false)?;
-    for module in MODULE_LIST.iter().copied() {
-        check(
-            &format!("modules/{}/Cargo.toml", module),
+        Some(
             Path::new("targets/aarch64-kernel.json")
                 .canonicalize()?
                 .to_str()
                 .unwrap(),
+        ),
+        true,
+    )?;
+    check("loader/Cargo.toml", Some("aarch64-unknown-uefi"), false)?;
+    check("tools/builder/Cargo.toml", None, false)?;
+    check("tools/module-postlinker/Cargo.toml", None, false)?;
+    for module in MODULE_LIST.iter().copied() {
+        check(
+            &format!("modules/{}/Cargo.toml", module),
+            Some(
+                Path::new("targets/aarch64-kernel.json")
+                    .canonicalize()?
+                    .to_str()
+                    .unwrap(),
+            ),
             false,
         )?;
     }
@@ -300,8 +309,8 @@ fn action_check() -> Result<ActionRef, Box<dyn Error>> {
     Ok(NoopAction::new(None, vec![]).into())
 }
 
-fn action_debug(release: bool) -> Result<ActionRef, Box<dyn Error>> {
-    let build_action = action_build(release)?;
+fn action_debug(args: Args) -> Result<ActionRef, Box<dyn Error>> {
+    let build_action = action_build(args)?;
     let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
     cmd.args(QEMU_ARGS);
     cmd.arg("-s");
@@ -309,7 +318,7 @@ fn action_debug(release: bool) -> Result<ActionRef, Box<dyn Error>> {
     Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![build_action]).into())
 }
 
-fn action_dtb() -> Result<ActionRef, Box<dyn Error>> {
+fn action_dtb(_args: Args) -> Result<ActionRef, Box<dyn Error>> {
     let mut cmd = Command::new(env::var("QEMU").unwrap_or("qemu-system-aarch64".into()));
     cmd.args(QEMU_ARGS);
     cmd.arg("-machine");

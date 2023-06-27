@@ -13,19 +13,23 @@ impl CargoCmdAction {
         name: Option<String>,
         cmd: &str,
         release: bool,
-        target: &str,
+        target: Option<&str>,
         args: &[&str],
         dependencies: Vec<ActionRef>,
     ) -> Self {
         let mut command = Command::new("cargo");
         command.args([
             cmd,
-            "-Zbuild-std=core,compiler_builtins,alloc",
-            "-Zbuild-std-features=compiler-builtins-mem",
-            format!("--target={}", target).as_str(),
             format!("--manifest-path={}", manifest_path).as_str(),
             "-q",
         ]);
+        if let Some(target) = target {
+            command.args([
+                format!("--target={}", target).as_str(),
+                "-Zbuild-std=core,compiler_builtins,alloc",
+                "-Zbuild-std-features=compiler-builtins-mem",
+            ]);
+        }
         command.args(args);
         command.env("RUSTFLAGS", "-C symbol-mangling-version=v0");
         if release {

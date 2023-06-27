@@ -4,4 +4,10 @@
     "rust-analyzer.diagnostics.disabled": ["unresolved-proc-macro"],
     "rust-analyzer.cargo.target": "aarch64-unknown-none",
     "rust-analyzer.check.overrideCommand": ["./x", "check"],
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml",
+        "tools/builder/Cargo.toml",
+        "tools/module-postlinker/Cargo.toml"
+    ],
+    "rust-analyzer.check.invocationStrategy": "once"
 }
