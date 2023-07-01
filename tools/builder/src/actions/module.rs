@@ -6,6 +6,7 @@ use std::{
     process::Command,
     sync::Mutex,
     time::SystemTime,
+    vec,
 };
 
 use cargo_toml::Manifest;
@@ -84,8 +85,6 @@ impl Action for BuildModuleAction {
                 .canonicalize()?
                 .to_str()
                 .unwrap(),
-            "-C",
-            "strip=symbols",
             "-L",
             &format!(
                 "dependency={}",
@@ -118,6 +117,12 @@ impl Action for BuildModuleAction {
             "-C",
             "code-model=large",
         ]);
+
+        if self.release {
+            cmd.args(&["-C", "strip=symbols"]);
+        } else {
+            cmd.args(&["-C", "debuginfo=2"]);
+        }
 
         let kernel_libs = KERNEL_LIBS.lock()?;
         let mut add_dependency = |dep: &str, noprelude: bool| -> Result<(), Box<dyn Error>> {
@@ -164,8 +169,25 @@ impl Action for BuildModuleAction {
             "-x",
             "-Tmodule-linker.ld",
         ]);
-
         Box::new(CommandAction::new(ld_command, None, false, vec![])).run()?;
+
+        if !self.release {
+            let mut extract_debug_cmd = Command::new("aarch64-linux-gnu-objcopy");
+            extract_debug_cmd.args(&[
+                "--only-keep-debug",
+                &format!("build/{}_.o", package.name()),
+                &format!("build/{}.debug", package.name()),
+            ]);
+            let mut strip_cmd = Command::new("aarch64-linux-gnu-strip");
+            strip_cmd.args(&[
+                "-xg",
+                "-R",
+                ".debug_gdb_scripts",
+                &format!("build/{}_.o", package.name()),
+            ]);
+            Box::new(CommandAction::new(extract_debug_cmd, None, false, vec![])).run()?;
+            Box::new(CommandAction::new(strip_cmd, None, false, vec![])).run()?;
+        }
 
         module_postlinker::make_obj(
             &format!("build/{}_.o", package.name()),

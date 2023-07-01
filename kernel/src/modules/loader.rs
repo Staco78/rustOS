@@ -14,7 +14,7 @@ use elf::{
     section::SectionHeader,
     ElfBytes,
 };
-use log::warn;
+use log::{warn, info};
 
 use crate::{
     error::{Error, ModuleLoadError::*},
@@ -31,8 +31,10 @@ pub fn load(path: &str) -> Result<(), Error> {
     let file = fs::get_node(path)?;
 
     let buff = file.read_to_end_vec(0)?;
-    let loader = Loader::new(&buff)?;
+    let mut loader = Loader::new(&buff)?;
     loader.load()?;
+
+    info!("Module {} loaded at address {}", path, loader.load_address.expect("No load address"));
 
     Ok(())
 }
@@ -47,15 +49,16 @@ impl From<elf::ParseError> for Error {
 struct Loader<'a> {
     file: ElfBytes<'a, LittleEndian>,
     data: &'a [u8],
+    load_address: Option<VirtualAddress>
 }
 
 impl<'a> Loader<'a> {
     fn new(data: &'a [u8]) -> Result<Self, Error> {
         let file = ElfBytes::minimal_parse(data)?;
-        Ok(Self { file, data })
+        Ok(Self { file, data, load_address: None })
     }
 
-    fn load(&self) -> Result<(), Error> {
+    fn load(&mut self) -> Result<(), Error> {
         let sections_iter = self
             .file
             .section_headers()
@@ -177,7 +180,7 @@ impl<'a> Loader<'a> {
 
     /// Load all the sections marked with `SHF_ALLOC` into module space memory
     /// Update each `sh_addr` to where the section is in memory.
-    fn load_sections(&self, sections: &mut Vec<SectionHeader>) -> Result<(), Error> {
+    fn load_sections(&mut self, sections: &mut Vec<SectionHeader>) -> Result<(), Error> {
         let mut alloc_size = 0usize;
         for section in sections.iter() {
             if (section.sh_flags & SHF_ALLOC as u64) != 0 {
@@ -192,6 +195,8 @@ impl<'a> Loader<'a> {
             MemoryUsage::ModuleSpace,
             AddrSpaceSelector::kernel(),
         )?;
+
+        self.load_address = Some(base_addr);
 
         let mut current_offset = 0usize;
 

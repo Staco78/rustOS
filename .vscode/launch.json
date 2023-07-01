@@ -1,39 +1,50 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-        "preLaunchTask": "qemu",
-        "name": "debug kernel",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/root/kernel",
-        "miDebuggerServerAddress": "localhost:1234",
-        "cwd": "${workspaceFolder}",
-        "miDebuggerPath": "/usr/bin/aarch64-linux-gnu-gdb",
-        "args": [],
-        "MIMode": "gdb",
-        "targetArchitecture": "arm64",
-        "stopAtEntry": false,
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "custom",
+            "name": "debug kernel lldb",
+            "preLaunchTask": "qemu",
+            "targetCreateCommands": [
+                "target create ${workspaceFolder}/root/kernel"
+            ],
+            "processCreateCommands": ["gdb-remote localhost:1234", "c"],
+            "sourceLanguages": ["rust"]
+        },
+        {
+            "preLaunchTask": "qemu",
+            "name": "debug kernel",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/root/kernel",
+            "miDebuggerServerAddress": "localhost:1234",
+            "cwd": "${workspaceFolder}",
+            "miDebuggerPath": "/usr/bin/aarch64-linux-gnu-gdb",
+            "args": [],
+            "MIMode": "gdb",
+            "targetArchitecture": "arm64",
+            "stopAtEntry": false,
 
-        "customLaunchSetupCommands": [
-            {
-                "text": "file \"${workspaceFolder}/root/kernel\""
-            },
-            {
-                "text": "target remote :1234",
-                "ignoreFailures": true
-            },
-        ],
-        "setupCommands": [
-            {
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ]
-    }
-  ]
+            "customLaunchSetupCommands": [
+                {
+                    "text": "file \"${workspaceFolder}/root/kernel\""
+                },
+                {
+                    "text": "target remote :1234",
+                    "ignoreFailures": true
+                }
+            ],
+            "setupCommands": [
+                {
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ]
 }
