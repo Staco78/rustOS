@@ -1,6 +1,7 @@
 use alloc::{
+    string::{String, ToString},
     sync::{Arc, Weak},
-    vec::Vec, string::{String, ToString},
+    vec::Vec,
 };
 use core::{
     ffi::CStr,
@@ -12,8 +13,9 @@ use core::{
 use crate::{
     error::Error,
     memory::PhysicalAddress,
+    sync::no_irq_locks::NoIrqMutex,
     utils::{
-        no_irq_locks::NoIrqMutex,
+        byte_size::ByteSize,
         smart_ptr::{SmartBuff, SmartPtr, SmartPtrBuff, SmartPtrSizedBuff},
     },
 };
@@ -162,10 +164,18 @@ impl FsNode for RootNode {
     }
 }
 
-#[derive(Debug)]
 struct Node {
     name: &'static str,
     data: &'static [u8],
+}
+
+impl Debug for Node {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Node")
+            .field("name", &self.name)
+            .field("data", &format_args!("{}", ByteSize(self.data.len())))
+            .finish()
+    }
 }
 
 impl Node {

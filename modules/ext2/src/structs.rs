@@ -167,6 +167,7 @@ pub struct Inode {
 
 assert_eq_size!(Inode, [u8; 128]);
 
+#[derive(Debug)]
 pub enum Type {
     FIFO,
     CharDev,

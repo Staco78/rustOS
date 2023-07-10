@@ -20,7 +20,7 @@ use crate::{
     error::{Error, ModuleLoadError::*},
     fs::{self},
     memory::{
-        vmm::{vmm, MemoryUsage},
+        vmm::{vmm, MapFlags, MemoryUsage},
         AddrSpaceSelector, VirtualAddress, PAGE_SHIFT, PAGE_SIZE,
     },
     symbols,
@@ -59,13 +59,15 @@ impl<'a> Loader<'a> {
     }
 
     fn load(&mut self) -> Result<(), Error> {
-        let sections_iter = self
-            .file
-            .section_headers()
-            .ok_or(Error::ModuleLoad(LoadingError("No sections")))?;
-        let mut sections = Vec::with_capacity(sections_iter.len());
-        sections.extend(sections_iter.iter());
-        drop(sections_iter);
+        let mut sections = {
+            let sections_iter = self
+                .file
+                .section_headers()
+                .ok_or(Error::ModuleLoad(LoadingError("No sections")))?;
+            let mut sections = Vec::with_capacity(sections_iter.len());
+            sections.extend(sections_iter.iter());
+            sections
+        };
 
         self.load_sections(&mut sections)?;
 
@@ -193,6 +195,7 @@ impl<'a> Loader<'a> {
         let base_addr = vmm().alloc_pages(
             page_count,
             MemoryUsage::ModuleSpace,
+            MapFlags::default(),
             AddrSpaceSelector::kernel(),
         )?;
 

@@ -116,12 +116,12 @@ impl VirtualAddress {
     }
 
     #[inline]
-    pub fn from_ptr<T>(ptr: *const T) -> Self {
-        Self(ptr.addr(), PhantomData)
+    pub fn from_ptr<T: ?Sized>(ptr: *const T) -> Self {
+        Self((ptr as *const ()).addr(), PhantomData)
     }
 
     #[inline]
-    pub fn from_ref<T>(r: &T) -> Self {
+    pub fn from_ref<T: ?Sized>(r: &T) -> Self {
         Self::from_ptr(r as *const T)
     }
 }

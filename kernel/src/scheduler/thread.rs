@@ -11,8 +11,8 @@ use crate::{
     cpu::InterruptFrame,
     error::Error,
     memory::{
-        vmm::{vmm, MemoryUsage},
-        AddrSpaceSelector, VirtualAddress, PAGE_SIZE,
+        vmm::{vmm, MapFlags, MapOptions, MapSize, MemoryUsage},
+        AddrSpaceSelector, PhysicalAddress, VirtualAddress, PAGE_SHIFT, PAGE_SIZE,
     },
 };
 
@@ -41,8 +41,10 @@ pub enum ThreadState {
     Running,
     Exited,
 
-    // store the time in ns from uptime where we will wake up the thread
+    /// Store the time in ns from uptime where we will wake up the thread.
     Waiting(u64),
+
+    Blocked,
 }
 
 pub struct Thread {
@@ -89,16 +91,25 @@ impl Thread {
             } else {
                 MemoryUsage::KernelHeap
             };
-            vmm().alloc_pages(
-                USER_STACK_PAGE_COUNT,
+            let r = vmm().alloc_pages(
+                USER_STACK_PAGE_COUNT + 1,
                 usage,
+                MapFlags::default(),
                 AddrSpaceSelector::Locked(addr_space),
-            )?
+            )?;
+            vmm().map_page(
+                r,
+                PhysicalAddress::new(usize::MAX & !((1 << PAGE_SHIFT) - 1)),
+                MapOptions::new(MapSize::Size4KB, MapFlags::new(false, false, 0b11, 1, true)),
+                AddrSpaceSelector::Locked(addr_space),
+            )?;
+            r + PAGE_SIZE
         };
 
         let kernel_stack_base = vmm().alloc_pages(
             KERNEL_STACK_PAGE_COUNT,
             MemoryUsage::KernelHeap,
+            MapFlags::default(),
             AddrSpaceSelector::kernel(),
         )?;
         let kernel_stack =
@@ -133,7 +144,7 @@ impl Thread {
 
     #[inline]
     pub fn saved_context(&self) -> *mut InterruptFrame {
-        debug_assert!(self.kernel_stack != 0);
+        debug_assert_ne!(self.kernel_stack, 0);
         self.kernel_stack.as_ptr()
     }
 }
@@ -176,6 +187,22 @@ impl ThreadRef {
         SCHEDULER.config_timer(Cpu::current().threads().lock().len());
     }
 }
+
+impl PartialEq for ThreadRef {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.id().eq(&other.id())
+    }
+}
+impl Eq for ThreadRef {}
+
+impl PartialEq for Thread {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
+}
+impl Eq for Thread {}
 
 impl Drop for Thread {
     fn drop(&mut self) {

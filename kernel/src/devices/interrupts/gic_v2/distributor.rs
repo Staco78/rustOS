@@ -1,16 +1,17 @@
 use super::regs::{DistributorRegs, GICD_CTLR};
 use crate::{
-    devices::gic_v2::regs::GICD_SGIR,
-    interrupts::interrupts::CoreSelection,
+    devices::gic_v2::regs::{GICD_SGIR, GICD_TYPER},
+    interrupts::{CoreSelection, InterruptMode},
     memory::{
         vmm::{vmm, MapFlags, MapOptions, MapSize},
         AddrSpaceSelector, PhysicalAddress, VirtualAddress,
     },
 };
-use tock_registers::interfaces::Writeable;
+use tock_registers::interfaces::{Readable, Writeable};
 
 pub struct Distributor {
     base: VirtualAddress,
+    irq_count: usize,
 }
 
 impl Distributor {
@@ -26,17 +27,34 @@ impl Distributor {
             )
             .unwrap();
 
+        let base = base.to_virt();
+
+        let regs = unsafe { &*(base.as_ptr() as *const DistributorRegs) };
+        let it_lines_count = regs.typer.read(GICD_TYPER::ITLinesCount);
+        let irq_count = (it_lines_count + 1) * 32;
+
         Self {
-            base: base.to_virt(),
+            base,
+            irq_count: irq_count as usize,
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn regs(&self) -> &DistributorRegs {
         unsafe { &*(self.base.as_ptr() as *const DistributorRegs) }
     }
 
     pub fn init(&self) {
+        for irq in 32..self.irq_count {
+            // Set target to CPU 0
+            let n = irq / 4;
+            let off = (irq % 4) * 8;
+            let reg = &self.regs().itargetsr[n];
+            let val = reg.get();
+            let val = val | 1 << off;
+            reg.set(val);
+        }
+
         self.regs().ctlr.write(GICD_CTLR::EnableGrp0::SET);
     }
 
@@ -62,5 +80,16 @@ impl Distributor {
                 + GICD_SGIR::CpuTargetList.val(target_list as u32)
                 + GICD_SGIR::ID.val(interrupt_id as u32),
         );
+    }
+
+    pub fn set_mode(&self, interrupt: u32, mode: InterruptMode) {
+        let reg = &self.regs().icfgr[interrupt as usize / 16];
+        let val = reg.get();
+        let off = (interrupt % 16) * 2 + 1;
+        let val = match mode {
+            InterruptMode::EdgeTriggered => val | 1 << off,
+            InterruptMode::LevelSensitive => val & !(1 << off),
+        };
+        reg.set(val);
     }
 }

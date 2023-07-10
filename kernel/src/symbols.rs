@@ -10,7 +10,7 @@ pub fn init() {
     let file = fs::get_node("/initrd/ksymbols").expect("ksymbols not found");
     let symbols = unsafe { &mut SYMBOLS };
     let buff = file.read_to_end_vec(0).unwrap();
-    let mut off = 0;    
+    let mut off = 0;
     while off + 10 < buff.len() {
         let addr = usize::from_le_bytes(<[u8; 8]>::try_from(&buff[off..off + 8]).unwrap());
         let cstr = CStr::from_bytes_until_nul(&buff[off + 8..]).unwrap();

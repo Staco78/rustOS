@@ -1,6 +1,6 @@
 use core::{fmt::Debug, mem::MaybeUninit, slice};
 
-use alloc::{vec::Vec, string::String};
+use alloc::{string::String, vec::Vec};
 
 use crate::{
     error::{Error, FsError::*},

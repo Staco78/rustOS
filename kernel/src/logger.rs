@@ -1,8 +1,19 @@
-use core::fmt::Write;
+use core::fmt::{self, Write};
 
 use log::Level;
 
-use crate::{cpu, utils::no_irq_locks::NoIrqMutex};
+use crate::{cpu, sync::no_irq_locks::NoIrqMutex};
+
+// use crate::cpu;
+// struct NoIrqMutex<T> {
+//     __: T,
+// }
+// impl<T> NoIrqMutex<T> {
+//     const fn new(a: T) -> Self {
+//         Self { __: a }
+//     }
+//     fn lock(&self) -> () {}
+// }
 
 pub struct KernelLogger {
     lock: NoIrqMutex<()>,
@@ -23,6 +34,7 @@ const TARGET_BLACKLIST_TRACE: &[&str] = &[
     "timer",
     "smp",
     "fs",
+    "exceptions",
 ];
 
 impl log::Log for KernelLogger {
@@ -55,7 +67,11 @@ impl log::Log for KernelLogger {
                 }
             };
 
-            let lock = self.lock.lock();
+            let lock = if record.target() == "panic" {
+                None
+            } else {
+                Some(self.lock.lock())
+            };
 
             let level = record.level();
             let color = match level {
@@ -82,8 +98,8 @@ impl log::Log for KernelLogger {
                     write!(output, "{}: ", module).unwrap();
                 }
             }
-            // dont't show automatic target
-            else if !target.contains("::") && level != Level::Info
+            // don't show automatic target
+            else if !target.contains("::") && level != Level::Info && target != "panic"
             {
                 write!(output, "{}: ", target).unwrap();
             }
@@ -109,12 +125,15 @@ pub fn set_output(output: &'static mut dyn Write) {
     }
 }
 
-pub fn log(str: &str) -> Result<(), ()> {
+pub fn puts(str: &str) {
     if let Some(output) = unsafe { &mut OUTPUT } {
-        output.write_str(str).map_err(|_| ())?;
-        Ok(())
-    } else {
-        Err(())
+        output.write_str(str).expect("Write failed");
+    }
+}
+
+pub fn puts_fmt(args: fmt::Arguments) {
+    if let Some(output) = unsafe { &mut OUTPUT } {
+        output.write_fmt(args).expect("Write failed");
     }
 }
 

@@ -9,6 +9,7 @@ use uefi::table::boot::MemoryDescriptor;
 mod addr_space;
 mod address;
 mod constants;
+mod dma;
 mod heap;
 mod mmu;
 mod pmm;
@@ -17,6 +18,7 @@ pub mod vmm;
 pub use addr_space::*;
 pub use address::{PhysicalAddress, VirtualAddress};
 pub use constants::*;
+pub use dma::*;
 pub use vmm::{vmm, MemoryUsage};
 
 use self::{

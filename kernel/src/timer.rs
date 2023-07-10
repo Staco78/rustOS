@@ -7,7 +7,7 @@ use cortex_a::registers::{CNTFRQ_EL0, CNTPCT_EL0, CNTP_CTL_EL0, CNTP_CVAL_EL0, C
 use log::{info, trace};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
-use crate::{cpu::InterruptFrame, interrupts::interrupts};
+use crate::{cpu::InterruptFrame, interrupts};
 
 const INTERRUPT_ID: u32 = 30;
 static HANDLER: AtomicUsize = AtomicUsize::new(0);
@@ -25,7 +25,7 @@ fn ns_per_tick() -> f64 {
 pub fn init(handler: interrupts::Handler) {
     info!(target: "timer", "Timer initialized");
     unsafe { NS_PER_TICK = 1_000_000_000. / frequency() as f64 };
-    interrupts::set_irq_handler(INTERRUPT_ID, self::handler);
+    interrupts::set_irq_handler(INTERRUPT_ID, self::handler, 0);
 
     let handler_ptr = handler as usize;
     HANDLER.store(handler_ptr, Ordering::Relaxed);
@@ -43,11 +43,11 @@ pub fn frequency() -> u64 {
     CNTFRQ_EL0.get()
 }
 
-fn handler(frame: *mut InterruptFrame) -> *mut InterruptFrame {
+fn handler(id: u32, frame: *mut InterruptFrame, _: usize) -> *mut InterruptFrame {
     CNTP_CTL_EL0.modify(CNTP_CTL_EL0::IMASK::SET);
     let handler_ptr: interrupts::Handler =
         unsafe { mem::transmute(HANDLER.load(Ordering::Relaxed)) };
-    handler_ptr(frame)
+    handler_ptr(id, frame, 0)
 }
 
 // set the timer to fire in ? ns

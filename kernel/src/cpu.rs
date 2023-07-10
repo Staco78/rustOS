@@ -5,13 +5,14 @@ use log::error;
 use static_assertions::assert_eq_size;
 use tock_registers::interfaces::Readable;
 
-use crate::interrupts::exceptions::disable_irqs;
+use crate::interrupts::exceptions::disable_exceptions;
 
 #[panic_handler]
 pub fn panic_handler(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
         if let Some(message) = info.message() {
             error!(
+                target: "panic",
                 "Kernel panic in {} at ({}, {}): {}",
                 location.file(),
                 location.line(),
@@ -20,6 +21,7 @@ pub fn panic_handler(info: &PanicInfo) -> ! {
             );
         } else {
             error!(
+                target: "panic",
                 "Kernel panic in {} at ({}, {})",
                 location.file(),
                 location.line(),
@@ -33,7 +35,7 @@ pub fn panic_handler(info: &PanicInfo) -> ! {
 
 pub fn halt() -> ! {
     loop {
-        disable_irqs();
+        disable_exceptions();
         wfi();
     }
 }

@@ -8,7 +8,10 @@ use super::{
 use crate::{
     error::Error,
     error::MemoryError::*,
-    memory::{constants::PAGE_SIZE, KERNEL_HEAP_RANGE, LOW_ADDR_SPACE_RANGE, USER_SPACE_RANGE},
+    memory::{
+        constants::PAGE_SIZE, KERNEL_DATA_RANGE, KERNEL_HEAP_RANGE, LOW_ADDR_SPACE_RANGE,
+        USER_SPACE_RANGE,
+    },
     utils::sync_once_cell::SyncOnceCell,
 };
 use core::{
@@ -73,7 +76,8 @@ impl<'a> VirtualMemoryManager<'a> {
         }
     }
 
-    // map virtual address "from" to physical address "to" and return "from"
+    // FIXME: this should be unsafe
+    /// Map virtual address "from" to physical address "to" and return "from".
     pub fn map_page(
         &self,
         from: VirtualAddress,
@@ -91,6 +95,25 @@ impl<'a> VirtualMemoryManager<'a> {
             }
         }
         self.mmu.map_page(from, to, options, &mut addr_space)
+    }
+
+    /// Map `page_count` pages of virtual space from `from` to `to`.
+    pub unsafe fn map(
+        &self,
+        from: VirtualAddress,
+        to: PhysicalAddress,
+        count: usize,
+        flags: MapFlags,
+        addr_space: AddrSpaceSelector,
+    ) -> Result<VirtualAddress, Error> {
+        let mut addr_space = addr_space.lock();
+        {
+            let is_low = LOW_ADDR_SPACE_RANGE.contains(&from);
+            if addr_space.is_low != is_low {
+                return Err(Error::Memory(InvalidAddrSpace));
+            }
+        }
+        self.mmu.map(from, to, count, flags, &mut addr_space)
     }
 
     // unmap virtual address "addr" and return the physical address where it was mapped
@@ -121,6 +144,7 @@ impl<'a> VirtualMemoryManager<'a> {
         trace!(target: "vmm", "Search {count} pages of {:?} virtual space", usage);
         let is_low_addr_space = match usage {
             MemoryUsage::KernelHeap => false,
+            MemoryUsage::KernelData => false,
             MemoryUsage::ModuleSpace => false,
             MemoryUsage::UserData => true,
         };
@@ -143,6 +167,7 @@ impl<'a> VirtualMemoryManager<'a> {
 
         let range = match usage {
             MemoryUsage::KernelHeap => KERNEL_HEAP_RANGE,
+            MemoryUsage::KernelData => KERNEL_DATA_RANGE,
             MemoryUsage::UserData => USER_SPACE_RANGE,
             MemoryUsage::ModuleSpace => unreachable!(),
         };
@@ -150,10 +175,33 @@ impl<'a> VirtualMemoryManager<'a> {
         self.mmu.find_free_pages(count, range, &addr_space)
     }
 
+    /// `find_free_pages` and then `map`.
+    pub unsafe fn find_and_map(
+        &self,
+        to: PhysicalAddress,
+        count: usize,
+        usage: MemoryUsage,
+        flags: MapFlags,
+        addr_space: AddrSpaceSelector,
+    ) -> Result<VirtualAddress, Error> {
+        let mut addr_space = addr_space.lock();
+
+        let vaddr =
+            self.find_free_pages(count, usage, AddrSpaceSelector::Unlocked(&mut addr_space))?;
+        self.map(
+            vaddr,
+            to,
+            count,
+            flags,
+            AddrSpaceSelector::Unlocked(&mut addr_space),
+        )
+    }
+
     pub fn alloc_pages(
         &self,
         count: usize,
         usage: MemoryUsage,
+        map_flags: MapFlags,
         addr_space: AddrSpaceSelector,
     ) -> Result<VirtualAddress, Error> {
         trace!(target: "vmm", "Alloc {} pages of {:?}", count, usage);
@@ -161,19 +209,20 @@ impl<'a> VirtualMemoryManager<'a> {
         let mut lock = addr_space.lock();
         let virtual_addr =
             self.find_free_pages(count, usage, AddrSpaceSelector::Unlocked(&mut lock))?;
-        for i in 0..count {
-            let physical_addr = self
-                .physical
-                .alloc(1)
-                .ok_or(Error::Memory(OutOfPhysicalMemory))?;
 
-            self.map_page(
-                virtual_addr + i * PAGE_SIZE,
-                physical_addr,
-                MapOptions::default_4k(),
+        let paddr = self
+            .physical
+            .alloc(count)
+            .ok_or(Error::Memory(OutOfPhysicalMemory))?;
+        unsafe {
+            self.map(
+                virtual_addr,
+                paddr,
+                count,
+                map_flags,
                 AddrSpaceSelector::Unlocked(&mut lock),
-            )?;
-        }
+            )?
+        };
 
         Ok(virtual_addr)
     }
@@ -218,7 +267,12 @@ impl<'a> VirtualMemoryManager<'a> {
 
 impl<'a> PageAllocator<Virtual> for VirtualMemoryManager<'a> {
     fn alloc(&self, count: usize) -> Option<VirtualAddress> {
-        match self.alloc_pages(count, MemoryUsage::KernelHeap, AddrSpaceSelector::kernel()) {
+        match self.alloc_pages(
+            count,
+            MemoryUsage::KernelHeap,
+            MapFlags::default(),
+            AddrSpaceSelector::kernel(),
+        ) {
             Ok(addr) => Some(addr),
             Err(_) => None,
         }
@@ -306,7 +360,7 @@ impl MapFlags {
 
 impl Default for MapFlags {
     fn default() -> Self {
-        Self(0b00011100) // remap: 0 AttrIndx: 1 shareability: 11 L0_access: 0 RO: 0
+        Self(0b00011100) // remap: 0 AttrIndx: 1 shareability: 0b11 L0_access: 0 RO: 0
     }
 }
 
@@ -342,6 +396,7 @@ impl MapOptions {
 #[derive(Debug, PartialEq, Eq)]
 pub enum MemoryUsage {
     KernelHeap,
+    KernelData,
     ModuleSpace,
     UserData,
 }

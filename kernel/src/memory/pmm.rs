@@ -1,6 +1,8 @@
 use crate::{
     error::{Error, MemoryError::*},
-    utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex},
+    memory::PAGE_SHIFT,
+    sync::no_irq_locks::NoIrqMutex,
+    utils::byte_size::ByteSize,
 };
 
 use super::{
@@ -234,6 +236,9 @@ impl PhysicalMemoryManager {
 
         let mask = !((1u16 << (u8::BITS as usize - offset)) - 1) as u8;
         let bit_i = (bitmap[0] | mask).leading_ones() as usize;
+        if bit_i == u8::BITS as usize {
+            return Err(u8::BITS as usize - offset);
+        }
         if count == 1 {
             return Ok(bit_i);
         }
@@ -271,7 +276,7 @@ impl PhysicalMemoryManager {
         }
     }
 
-    fn find_pages(&self, count: usize) -> Result<PhysicalAddress, Error> {
+    fn find_pages(&self, count: usize) -> Result<usize, Error> {
         debug_assert!(count > 0);
 
         let mut index = 0;
@@ -282,10 +287,14 @@ impl PhysicalMemoryManager {
             let first_free =
                 Self::find_first_zero(bitmap).ok_or(Error::Memory(OutOfPhysicalMemory))?;
             match Self::can_alloc(&bitmap[first_free..], count, off) {
-                Ok(off) => return Ok(PhysicalAddress::new(first_free * u8::BITS as usize + off)),
+                Ok(off) => return Ok((index + first_free) * u8::BITS as usize + off),
                 Err(e) => {
                     index += e / u8::BITS as usize;
-                    off = off % u8::BITS as usize;
+                    off += e % u8::BITS as usize;
+                    if off >= u8::BITS as usize {
+                        off -= u8::BITS as usize;
+                        index += 1;
+                    }
                 }
             }
         }
@@ -293,9 +302,10 @@ impl PhysicalMemoryManager {
 
     pub fn alloc_pages(&mut self, count: usize) -> Result<PhysicalAddress, Error> {
         let pages = self.find_pages(count)?;
-        self.set_used_range(pages.addr(), count);
-        trace!(target: "pmm", "Alloc {} page(s) at {}", count, (pages * PAGE_SIZE));
-        Ok(pages * PAGE_SIZE)
+        self.set_used_range(pages, count);
+        let addr = PhysicalAddress::new(pages << PAGE_SHIFT);
+        trace!(target: "pmm", "Alloc {} page(s) at {}", count, addr);
+        Ok(addr)
     }
 
     pub fn unalloc_pages(&mut self, addr: PhysicalAddress, count: usize) {

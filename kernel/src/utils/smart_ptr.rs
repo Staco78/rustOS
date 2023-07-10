@@ -2,7 +2,7 @@ use core::{
     fmt::Debug,
     marker::{PhantomData, Unsize},
     mem::{self, MaybeUninit},
-    ops::{CoerceUnsized, Deref},
+    ops::{CoerceUnsized, Deref, DerefMut},
     ptr::{self, NonNull},
 };
 
@@ -35,6 +35,17 @@ unsafe impl<T: ?Sized + Send> Send for SmartPtr<T> {}
 unsafe impl<T: ?Sized + Sync> Sync for SmartPtr<T> {}
 
 impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<SmartPtr<U>> for SmartPtr<T> {}
+
+impl<T> SmartPtr<T> {
+    /// This will put `data` on the heap but will never free it.
+    /// If this is and all it's clones are dropped, it cause a memory leak.
+    pub fn new_boxed(data: T) -> Self {
+        let inner = Box::new(SmartPtrInner::new(data));
+        let ptr = Box::leak(inner) as *mut _;
+        let ptr = unsafe { NonNull::new_unchecked(ptr) };
+        Self { ptr }
+    }
+}
 
 impl<T: ?Sized> Deref for SmartPtr<T> {
     type Target = T;
@@ -100,7 +111,7 @@ pub trait SmartBuff<T> {
                 false
             }
         });
-        
+
         let (i, inner) = if let Some((i, inner)) = r {
             (i, inner)
         } else {
@@ -110,6 +121,7 @@ pub trait SmartBuff<T> {
         let inner: &SmartPtrInner<T> = unsafe {
             // Safety: we can get a mutable reference because we checked that there is
             // no other reference anywhere above.
+            #[allow(clippy::cast_ref_to_mut)]
             let ptr: &mut _ = &mut *(&inner.data as *const _ as *mut MaybeUninit<T>);
             MaybeUninit::write(ptr, value);
 
@@ -267,7 +279,7 @@ impl<T> Drop for SmartPtrBuff<T> {
 
 #[derive(Debug)]
 pub struct SmartPtrSizedBuff<T, const N: usize> {
-    data: [SmartPtrInner<MaybeUninit<T>>; N],
+    data: Box<[SmartPtrInner<MaybeUninit<T>>; N]>,
 
     // If false: never drop a value once it was initialized. So keep `ref_count` as 1.
     drop: bool,
@@ -277,7 +289,7 @@ impl<T, const N: usize> SmartPtrSizedBuff<T, N> {
     const INIT: SmartPtrInner<MaybeUninit<T>> = SmartPtrInner::new(MaybeUninit::uninit());
 
     pub fn new(drop: bool) -> Self {
-        let data = [Self::INIT; N];
+        let data = Box::new([Self::INIT; N]);
         Self { data, drop }
     }
 }
@@ -285,11 +297,11 @@ impl<T, const N: usize> SmartPtrSizedBuff<T, N> {
 impl<T, const N: usize> SmartBuff<T> for SmartPtrSizedBuff<T, N> {
     #[inline(always)]
     unsafe fn data<'a>(&'a self) -> &'a [SmartPtrInner<MaybeUninit<T>>] {
-        &self.data
+        self.data.deref()
     }
     #[inline(always)]
     unsafe fn data_mut<'a>(&'a mut self) -> &'a mut [SmartPtrInner<MaybeUninit<T>>] {
-        &mut self.data
+        self.data.deref_mut()
     }
     #[inline(always)]
     fn drop(&self) -> bool {

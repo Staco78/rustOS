@@ -4,7 +4,7 @@ use crate::{scheduler::SCHEDULER, timer};
 
 use super::{
     process::ProcessRef,
-    thread::{ThreadRef, ThreadState},
+    thread::{ThreadId, ThreadRef, ThreadState},
     Cpu,
 };
 
@@ -42,29 +42,95 @@ pub fn exit(code: isize) -> ! {
     unreachable!()
 }
 
-#[inline]
+#[inline(always)]
 pub fn yield_now() {
     SCHEDULER.yield_now()
 }
 
-pub fn sleep(ns: u64) {
+pub fn sleep(duration_ns: u64) {
     {
-        let ns = timer::uptime_ns() + ns;
+        let time_point_ns = timer::uptime_ns() + duration_ns;
         let mut threads = SCHEDULER.waiting_threads().write();
         let r = threads.binary_search_by(|e| {
             let time = match e.state() {
                 ThreadState::Waiting(time) => time,
                 _ => unreachable!(),
             };
-            ns.cmp(&time)
+            time_point_ns.cmp(&time)
         });
-        let thread = current_thread().clone();
-        thread.atomic_state().store(ThreadState::Waiting(ns));
+        let current_thread = current_thread().clone();
+        let id = current_thread.id();
+        current_thread
+            .atomic_state()
+            .store(ThreadState::Waiting(time_point_ns));
         match r {
-            Ok(i) => threads.insert(i, thread),
-            Err(i) => threads.insert(i, thread),
+            Ok(i) => threads.insert(i, current_thread),
+            Err(i) => threads.insert(i, current_thread),
         };
+
+        trace!(target: "scheduler", "Thread {} goes to sleep for {}ms", id, duration_ns / 1000000);
     }
 
     yield_now();
+}
+
+/// Get a thread by its id.
+///
+/// **Warn**: This is O(n) with n as the thread count and may block the scheduler work so use carefully.
+pub fn get_thread(id: ThreadId) -> Option<ThreadRef> {
+    if current_thread().id() == id {
+        return Some(current_thread().clone());
+    }
+    for cpu in SCHEDULER.cpus() {
+        for thread in cpu.threads().lock().iter() {
+            if thread.id() == id {
+                return Some(thread.clone());
+            }
+        }
+    }
+
+    None
+}
+
+/// Set the current state as `Blocked` state and go to sleep.
+pub fn block_thread() {
+    block_thread_drop(());
+}
+
+#[inline]
+/// Same as `block_thread` but also drop `val` while owning a lock that prevent others thread from unblocking it.
+/// 
+/// May help to prevent race conditions if `val` is a lock guard.
+pub fn block_thread_drop<T>(val: T) {
+    let current_thread = current_thread();
+    current_thread.atomic_state().store(ThreadState::Blocked);
+
+    trace!(target: "scheduler", "Block thread {}", current_thread.id());
+
+    let mut threads = SCHEDULER.blocked_threads.lock();
+    threads.push(current_thread.clone());
+
+    drop(val);
+
+    drop(threads);
+
+    yield_now();
+}
+
+/// Unblock the thread. Return err if the thread isn't blocked.
+pub fn unblock_thread(id: ThreadId) -> Result<(), ()> {
+    let mut blocked_threads = SCHEDULER.blocked_threads.lock();
+    let (index, _) = blocked_threads
+        .iter()
+        .enumerate()
+        .find(|&(_, t)| t.id() == id)
+        .ok_or(())?;
+
+    trace!(target: "scheduler", "Unblock thread {}", id);
+
+    let thread = blocked_threads.swap_remove(index);
+    let r = thread.atomic_state().swap(ThreadState::Runnable);
+    debug_assert_eq!(r, ThreadState::Blocked);
+    SCHEDULER.add_thread(thread);
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use core::{arch::global_asm, fmt::Display, num::NonZeroU8, sync::atomic::Ordering};
 
 use cortex_a::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
-use log::{error, info};
+use log::{error, info, trace};
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::{
@@ -134,8 +134,8 @@ pub fn init() {
 #[no_mangle]
 unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
     let frame = frame.as_mut().unwrap();
-    error!("Exception in CPU {}", cpu::id());
-    error!("{}", frame);
+    error!(target: "panic", "Exception in CPU {}", cpu::id());
+    error!(target: "panic", "{}", frame);
     panic!("{}", CpuException::from_esr(ESR_EL1.get() as u32));
 }
 
@@ -145,10 +145,10 @@ extern "C" fn interrupt_print(i: u32) {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-pub struct IrqState(NonZeroU8);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DaifState(NonZeroU8);
 
-impl IrqState {
+impl DaifState {
     #[inline(always)]
     fn from_u64(v: u64) -> Self {
         debug_assert!(<u64 as TryInto<u8>>::try_into(v >> 6).is_ok());
@@ -159,59 +159,105 @@ impl IrqState {
     fn into_u64(self) -> u64 {
         ((self.0.get() & 0x7F) << 6) as u64
     }
+
+    #[inline(always)]
+    pub fn all_masked(self) -> bool {
+        self.0.get() & 0b1111 == 0b1111
+    }
+}
+
+impl Display for DaifState {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(formatter, "IrqState(")?;
+        let val = self.0.get() & 0x7F;
+        if val == 0b1111 {
+            return write!(formatter, "All masked)");
+        }
+        let f = val & 0b0001 == 0;
+        let i = val & 0b0010 == 0;
+        let a = val & 0b0100 == 0;
+        let d = val & 0b1000 == 0;
+        if f {
+            write!(formatter, "FIQ")?;
+            if i {
+                write!(formatter, ", ")?;
+            }
+        }
+        if i {
+            write!(formatter, "IRQ")?;
+            if a {
+                write!(formatter, ", ")?;
+            }
+        }
+        if a {
+            write!(formatter, "SError")?;
+            if d {
+                write!(formatter, ", ")?;
+            }
+        }
+        if d {
+            write!(formatter, "Debug")?;
+        }
+        write!(formatter, ")")
+    }
 }
 
 /// return the value of the DAIF register before modification
 #[inline]
-pub fn disable_irqs() -> IrqState {
+pub fn disable_exceptions() -> DaifState {
     let v = DAIF.get();
     DAIF.write(DAIF::D::Masked + DAIF::A::Masked + DAIF::I::Masked + DAIF::F::Masked);
-    IrqState::from_u64(v)
+    DaifState::from_u64(v)
 }
 
 /// return the value of the DAIF register before modification
 #[inline]
-pub fn enable_irqs() -> IrqState {
+fn enable_exceptions() -> DaifState {
     let v = DAIF.get();
     DAIF.write(DAIF::D::Unmasked + DAIF::A::Unmasked + DAIF::I::Unmasked + DAIF::F::Unmasked);
-    IrqState::from_u64(v)
+    DaifState::from_u64(v)
 }
 
-/// restore irqs from an IrqState
+/// Restore exceptions from a previous state.
 #[inline]
-#[allow(unused)]
-pub fn restore_irqs(v: IrqState) {
-    DAIF.set(v.into_u64())
+pub fn restore_exceptions(state: DaifState) {
+    DAIF.set(state.into_u64());
 }
 
-/// Disable irqs with depth level storage method
+#[inline]
+pub fn get_exception_state() -> DaifState {
+    let v = DAIF.get();
+    DaifState::from_u64(v)
+}
+
+/// Disable exceptions with depth level storage method
 /// In depth level storage method, each CPU store
-/// the number of times `disable_irqs_depth()` was called more than `restore_irqs_depth()`
+/// the number of times `disable_exceptions_depth()` was called more than `restore_exceptions_depth()`
 #[inline]
-pub fn disable_irqs_depth() {
+pub fn disable_exceptions_depth() {
     let cpu = Cpu::current();
     let depth = cpu.irqs_depth.fetch_add(1, Ordering::Relaxed);
-    // debug!("disable_irqs_depth: {}", depth + 1);
     if depth == 0 {
-        disable_irqs();
+        disable_exceptions();
     }
+    trace!(target: "exceptions", "Disable irqs with depth (new state: {}, new depth: {})", get_exception_state(), depth + 1);
 }
 
 #[inline]
-pub fn restore_irqs_depth() {
+pub fn restore_exceptions_depth() {
     let cpu = Cpu::current();
     let depth = cpu.irqs_depth.fetch_sub(1, Ordering::Relaxed);
-    // debug!("restore_irqs_depth: {}", depth - 1);
     if depth == 1 {
-        enable_irqs();
+        enable_exceptions();
     }
+    trace!(target: "exceptions", "Restore irqs with depth (new state: {}, new depth: {})", get_exception_state(), depth - 1);
 }
 
 #[macro_export]
 macro_rules! no_irq {
     ($inner:block) => {{
-        let __daif_value = $crate::exceptions::disable_irqs();
+        let __daif_state = $crate::exceptions::disable_exceptions();
         $inner;
-        crate::exceptions::restore_irqs(__daif_value);
+        crate::exceptions::restore_exceptions(__daif_state);
     }};
 }

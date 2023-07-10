@@ -43,6 +43,10 @@
                 {
                     "text": "-gdb-set disassembly-flavor intel",
                     "ignoreFailures": true
+                },
+                {
+                    "text": "set print asm-demangle on",
+                    "ignoreFailures": true
                 }
             ]
         }

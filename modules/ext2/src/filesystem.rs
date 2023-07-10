@@ -1,4 +1,4 @@
-use core::{mem::MaybeUninit, ops::Deref, slice};
+use core::{assert_matches::debug_assert_matches, mem::MaybeUninit, ops::Deref};
 
 use alloc::{
     boxed::Box,
@@ -41,8 +41,6 @@ impl FileSystem {
             files: RwLock::new(Vec::new()),
             dirs: RwLock::new(Vec::new()),
         });
-        let inode = s.read_inode(2)?;
-        s.read_dir(&inode, |_| Ok(true))?;
         Ok(s)
     }
 
@@ -151,7 +149,14 @@ impl FileSystem {
         let block_size = self.superblock.block_size();
         let mut buff = Box::new_uninit_slice(block_size);
         let buff = self.read_block(index, &mut buff, 0)?;
-        let buff = unsafe { slice::from_raw_parts(buff.as_ptr() as *const u32, buff.len() / 4) };
+        // assert_eq!(buff.as_ptr() as usize % 4, 0);
+        // let buff = unsafe { slice::from_raw_parts(buff.as_ptr() as *const u32, buff.len() / 4) };
+        let buff = {
+            let (a, b, c) = unsafe { buff.align_to::<u32>() };
+            debug_assert!(a.is_empty());
+            debug_assert!(c.is_empty());
+            b
+        };
         if recurs_level == 1 {
             Ok(buff[block] as usize)
         } else if recurs_level == 2 {
@@ -173,15 +178,20 @@ impl FileSystem {
         F: FnMut(&DirEntry) -> Result<bool, Error>,
     {
         let inode_type = Type::try_from(inode.type_and_permissions).unwrap();
-        debug_assert!(matches!(inode_type, Type::Dir));
+        debug_assert_matches!(inode_type, Type::Dir);
 
-        let mut buff = Box::new_uninit_slice(self.superblock.block_size());
+        let mut buff: Box<[MaybeUninit<u8>]> = Box::new_uninit_slice(self.superblock.block_size());
         let buff = self.read_inode_block(inode, 0, &mut buff, 0)? as &[u8];
 
         let mut offset = 0;
 
         // FIXME
-        assert!((inode.size_lower as usize) <= self.superblock.block_size());
+        assert!(
+            (inode.size_lower as usize) <= self.superblock.block_size(),
+            "{} > {}",
+            (inode.size_lower as usize),
+            self.superblock.block_size()
+        );
 
         while offset < inode.size_lower as usize {
             let entry = unsafe {

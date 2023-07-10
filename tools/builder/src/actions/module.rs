@@ -152,7 +152,7 @@ impl Action for BuildModuleAction {
         };
 
         for dep in manifest.dependencies {
-            add_dependency(&dep.0, false)?;
+            add_dependency(&dep.0.replace('-', "_"), false)?;
         }
         add_dependency("core", true)?;
         add_dependency("alloc", true)?;

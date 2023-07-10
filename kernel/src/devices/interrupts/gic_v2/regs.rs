@@ -58,6 +58,18 @@ register_structs! {
     }
 }
 
+register_structs! {
+    pub MsiRegs {
+        (0x000 => __reserved1),
+        (0x008 => pub typer: ReadOnly<u32, MSI_TYPER::Register>),
+        (0x00C => __reserved2),
+        (0x040 => pub setspi: WriteOnly<u32>),
+        (0x044 => __reserved3),
+        (0xFCC => pub iidr: ReadOnly<u32>),
+        (0xFD0 => @END),
+    }
+}
+
 register_bitfields! [u32,
     pub GICD_CTLR [
         EnableGrp1 1,
@@ -108,5 +120,10 @@ register_bitfields! [u32,
     pub GICC_EOIR [
         CPUID OFFSET(10) NUMBITS(3) [],
         InterruptId OFFSET(0) NUMBITS(10) []
-    ]
+    ],
+
+    pub MSI_TYPER [
+        BASE_SPI OFFSET(16) NUMBITS(10) [],
+        SPI_COUNT OFFSET(0) NUMBITS(10) []
+    ],
 ];

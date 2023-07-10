@@ -3,12 +3,13 @@ use crate::memory::PhysicalAddress;
 mod drivers;
 mod initrd;
 pub mod path;
-mod vfs;
 mod utils;
+mod vfs;
+pub(crate) mod devfs;
 
-pub use vfs::*;
 pub use drivers::*;
 pub use utils::*;
+pub use vfs::*;
 
 #[inline]
 /// Safety: `initrd_ptr` and `initrd_len` should be valid.

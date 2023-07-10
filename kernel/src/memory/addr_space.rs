@@ -4,7 +4,7 @@ use core::{
     slice,
 };
 
-use crate::utils::no_irq_locks::{NoIrqMutex, NoIrqMutexGuard};
+use crate::sync::no_irq_locks::{NoIrqMutex, NoIrqMutexGuard};
 
 use super::{
     mmu::TableEntry,

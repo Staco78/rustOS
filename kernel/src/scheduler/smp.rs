@@ -11,7 +11,7 @@ use crate::{
     device_tree::{self, Node},
     interrupts,
     memory::{
-        vmm::{vmm, MapOptions, MapSize},
+        vmm::{vmm, MapFlags, MapOptions, MapSize},
         AddrSpaceSelector, MemoryUsage, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
         PAGE_SIZE,
     },
@@ -30,7 +30,7 @@ where
     let cpus = device_tree::get_node_weak("/cpus").expect("No cpus node in device tree");
     let (address_cells, size_cells) = (cpus.address_cells(), cpus.size_cells());
     assert!(address_cells == 1 && size_cells == 0); // we don't support others cells size
-    let cpu_nodes = cpus.children().filter(|c| c.name().starts_with("cpu@"));
+    let cpu_nodes = cpus.children().filter(|c| c.name().starts_with("cpu@0"));
 
     for cpu in cpu_nodes {
         let reg = cpu.get_property("reg").unwrap();
@@ -127,7 +127,12 @@ fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
 #[inline]
 fn alloc_ap_stack() -> VirtualAddress {
     vmm()
-        .alloc_pages(16, MemoryUsage::KernelHeap, AddrSpaceSelector::kernel())
+        .alloc_pages(
+            16,
+            MemoryUsage::KernelData,
+            MapFlags::default(),
+            AddrSpaceSelector::kernel(),
+        )
         .unwrap()
         + 16 * PAGE_SIZE
 }

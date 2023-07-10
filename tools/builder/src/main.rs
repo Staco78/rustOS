@@ -62,7 +62,7 @@ const QEMU_ARGS: &'static [&'static str] = &[
     "nvme,drive=drv0,serial=1234",
 ];
 
-const MODULE_LIST: &[&str] = &["hello", "ext2"];
+const MODULE_LIST: &[&str] = &["hello", "ext2", "nvme"];
 
 #[derive(Parser, Debug)]
 #[command()]
@@ -89,6 +89,7 @@ fn main() {
         "check" => action_check(args),
         "debug" => action_debug(args),
         "dtb" => action_dtb(args),
+        "clippy" => action_clippy(args),
         _ => {
             print_error_and_exit(format!("Unknown command {}", args.action));
         }
@@ -324,4 +325,44 @@ fn action_dtb(_args: Args) -> Result<ActionRef, Box<dyn Error>> {
     cmd.arg("-machine");
     cmd.arg("dumpdtb=qemu.dtb");
     Ok(BackgroundCommandAction::new(cmd, Some("Run qemu".into()), vec![]).into())
+}
+
+fn action_clippy(args: Args) -> Result<ActionRef, Box<dyn Error>> {
+    let clippy = |manifest: &str, target: &str, lib: bool| -> Result<(), Box<dyn Error>> {
+        let cmd_args: &[&str] = if lib {
+            &["--lib", "--keep-going", "-Zunstable-options"]
+        } else {
+            &["--keep-going", "-Zunstable-options"]
+        };
+        Box::new(CargoCmdAction::new(
+            manifest,
+            None,
+            "clippy",
+            args.release,
+            Some(target),
+            cmd_args,
+            vec![],
+        ))
+        .run()
+    };
+    clippy(
+        "kernel/Cargo.toml",
+        Path::new("targets/aarch64-kernel.json")
+            .canonicalize()?
+            .to_str()
+            .unwrap(),
+        true,
+    )?;
+    for module in MODULE_LIST.iter().copied() {
+        clippy(
+            &format!("modules/{}/Cargo.toml", module),
+            Path::new("targets/aarch64-kernel.json")
+                .canonicalize()?
+                .to_str()
+                .unwrap(),
+            false,
+        )?;
+    }
+
+    Ok(NoopAction::new(None, vec![]).into())
 }

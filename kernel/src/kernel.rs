@@ -20,12 +20,15 @@
 #![feature(maybe_uninit_as_bytes)]
 #![feature(vec_into_raw_parts)]
 #![feature(assert_matches)]
+#![feature(integer_atomics)]
+#![feature(maybe_uninit_slice)]
 
 pub mod acpi;
 pub mod bus;
 pub mod cpu;
 pub mod device_tree;
 pub mod devices;
+pub mod disks;
 pub mod error;
 pub mod fs;
 pub mod interrupts;
@@ -35,6 +38,7 @@ pub mod modules;
 pub mod psci;
 pub mod scheduler;
 pub mod symbols;
+pub mod sync;
 pub mod timer;
 pub mod utils;
 
@@ -56,6 +60,7 @@ use crate::{
         spcr::{self, Spcr},
     },
     bus::pcie,
+    devices::gic_v2,
     scheduler::exit,
 };
 
@@ -125,7 +130,7 @@ extern "C" fn main(
     unsafe { fs::init(initrd_ptr, initrd_len) };
     symbols::init();
     psci::init();
-    interrupts::init_chip(unsafe { acpi::get_table(Signature::MADT).expect("No MADT table") });
+    gic_v2::init();
 
     {
         scheduler::register_cpus();
@@ -135,10 +140,9 @@ extern "C" fn main(
 }
 
 fn later_main() -> ! {
-    modules::load("/initrd/ext2.kmod").unwrap();
-    fs::mount_device("/", fs::get_node("/initrd/ext2.disk").unwrap(), "ext2").unwrap();
-
     pcie::init();
+
+    modules::load("/initrd/ext2.kmod").unwrap();
 
     exit(0);
 }

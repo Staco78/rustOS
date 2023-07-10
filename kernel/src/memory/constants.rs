@@ -18,9 +18,9 @@ pub const PHYSICAL_LINEAR_MAPPING_RANGE: Range<VirtualAddress> =
     VirtualAddress::new(0xFFFF_0000_0000_0000)..VirtualAddress::new(0xFFFF_0080_0000_0000); // 512 GB
 pub const KERNEL_HEAP_RANGE: Range<VirtualAddress> =
     VirtualAddress::new(0xFFFF_0080_0000_0000)..VirtualAddress::new(0xFFFF_0100_0000_0000); // 512 GB
-                                                                                            // pub const MODULES_SPACE_RANGE: Range<VirtualAddress> =
-                                                                                            // VirtualAddress::new(0xFFFF_0100_0000_0000)..VirtualAddress::new(0xFFFF_0104_0000_0000); // 16 GB
+pub const KERNEL_DATA_RANGE: Range<VirtualAddress> =
+    VirtualAddress::new(0xFFFF_0100_0000_0000)..VirtualAddress::new(0xFFFF_0180_0000_0000); // 512 GB
 pub const MODULES_SPACE_RANGE: Range<VirtualAddress> =
-    VirtualAddress::new(0xFFFF_FFFF_0000_0000)..VirtualAddress::new(0xFFFF_FFFF_FFFF_FFFF);
+    VirtualAddress::new(0xFFFF_FFFF_0000_0000)..VirtualAddress::new(0xFFFF_FFFF_8000_0000);
 pub const USER_SPACE_RANGE: Range<VirtualAddress> =
     VirtualAddress::new(0x40000000)..VirtualAddress::new(0x8000000000);

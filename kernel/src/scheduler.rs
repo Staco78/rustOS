@@ -18,14 +18,14 @@ use tock_registers::interfaces::{Readable, Writeable};
 use crate::{
     cpu::{self, InterruptFrame},
     device_tree,
-    interrupts::interrupts::{self, CoreSelection},
+    interrupts::{self, CoreSelection},
     memory::{vmm, AddrSpaceLock},
     scheduler::{
         process::Process,
         thread::{Thread, ThreadEntry},
     },
+    sync::no_irq_locks::{NoIrqMutex, NoIrqRwLock},
     timer,
-    utils::no_irq_locks::{NoIrqMutex, NoIrqRwLock},
 };
 
 use self::{
@@ -76,6 +76,7 @@ pub struct Scheduler {
     thread_destroyer_of_threads: SyncUnsafeCell<Option<ThreadRef>>,
 
     waiting_threads: SyncUnsafeCell<MaybeUninit<NoIrqRwLock<VecDeque<ThreadRef>>>>,
+    blocked_threads: NoIrqMutex<Vec<ThreadRef>>,
 }
 
 unsafe impl Send for Scheduler {}
@@ -92,6 +93,7 @@ impl Scheduler {
             thread_destroyer_of_threads: SyncUnsafeCell::new(None),
 
             waiting_threads: SyncUnsafeCell::new(MaybeUninit::uninit()),
+            blocked_threads: NoIrqMutex::new(Vec::new()),
         }
     }
 
@@ -117,8 +119,8 @@ impl Scheduler {
             *self.waiting_threads.get() = MaybeUninit::new(NoIrqRwLock::new(VecDeque::new()));
         }
 
-        interrupts::set_irq_handler(0, Self::yield_handler);
-        timer::init(Self::timer_handler);
+        interrupts::set_irq_handler(0, Self::interrupt_handler, 0);
+        timer::init(Self::interrupt_handler);
 
         smp::start_cpus();
     }
@@ -208,7 +210,7 @@ impl Scheduler {
         }
     }
 
-    fn timer_handler(_frame: *mut InterruptFrame) -> *mut InterruptFrame {
+    fn interrupt_handler(_id: u32, _frame: *mut InterruptFrame, _: usize) -> *mut InterruptFrame {
         let thread = SCHEDULER.schedule();
         let thread = thread.read();
         thread.saved_context()
@@ -311,8 +313,9 @@ impl Scheduler {
         }
     }
 
+    /// Add the thread in the current CPU threads queue.
     pub(in crate::scheduler) fn add_thread(&self, thread: ThreadRef) {
-        assert!(thread.state() == ThreadState::Runnable);
+        assert_eq!(thread.state(), ThreadState::Runnable);
         let cpu = Cpu::current();
         let mut threads = cpu.threads().lock();
         threads.push_back(thread);
@@ -339,19 +342,11 @@ impl Scheduler {
             Cpu::current()
                 .irqs_depth
                 .load(core::sync::atomic::Ordering::Relaxed),
-            0
+            0,
+            "Yielding with IRQs disabled"
         );
         debug_assert_eq!(DAIF.get(), 0);
         interrupts::chip().send_sgi(CoreSelection::Me, 0);
-    }
-
-    fn yield_handler(_frame: *mut InterruptFrame) -> *mut InterruptFrame {
-        debug_assert!(Cpu::current().irqs_depth.load(Ordering::Relaxed) > 0);
-        let thread = SCHEDULER.schedule();
-        let thread = thread.read();
-        let context = thread.saved_context();
-        drop(thread);
-        context
     }
 
     fn thread_destroyer_of_threads() -> ! {
@@ -430,7 +425,7 @@ impl Cpu {
         unsafe { (val as *const Cpu).as_ref().unwrap_unchecked() }
     }
 
-    // safety: cpu should live enough
+    /// Safety: `cpu` should live enough.
     unsafe fn set_current(cpu: &Cpu) {
         let ptr: *const Cpu = cpu;
         TPIDR_EL1.set(ptr.addr() as u64);

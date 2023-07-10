@@ -5,8 +5,12 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use kernel::{
+    error::Error,
     logger,
-    memory::{vmm, AddrSpaceSelector, MemoryUsage}, error::Error,
+    memory::{
+        vmm::{vmm, MapFlags},
+        AddrSpaceSelector, MemoryUsage,
+    },
 };
 use log::{debug, error};
 
@@ -17,7 +21,7 @@ pub static MODULE_NAME: &str = env!("CARGO_PKG_NAME");
 pub fn init() -> Result<(), Error> {
     debug!("Hello");
     error!("hey");
-    logger::log("hey logger\n").unwrap();
+    logger::puts("hey logger\n");
     debug!("hey log");
 
     let x = core::unicode::conversions::to_lower('T');
@@ -28,7 +32,12 @@ pub fn init() -> Result<(), Error> {
     debug!("{:?}", x);
 
     let addr = vmm()
-        .alloc_pages(15, MemoryUsage::KernelHeap, AddrSpaceSelector::kernel())
+        .alloc_pages(
+            15,
+            MemoryUsage::KernelHeap,
+            MapFlags::default(),
+            AddrSpaceSelector::kernel(),
+        )
         .unwrap();
     debug!("alloc at {:?}", addr);
 

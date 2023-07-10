@@ -5,14 +5,15 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(int_roundings)]
 #![feature(new_uninit)]
+#![feature(assert_matches)]
 
 extern crate alloc;
 
+mod consts;
 mod driver;
 mod filesystem;
-mod structs;
-mod consts;
 mod nodes;
+mod structs;
 
 use driver::DRIVER;
 use kernel::{error::Error, fs};

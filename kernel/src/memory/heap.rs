@@ -9,7 +9,8 @@ use static_assertions::{assert_eq_align, assert_eq_size};
 
 use crate::{
     memory::VirtualAddress,
-    utils::{byte_size::ByteSize, no_irq_locks::NoIrqMutex, sync_once_cell::SyncOnceCell},
+    sync::no_irq_locks::NoIrqMutex,
+    utils::{byte_size::ByteSize, sync_once_cell::SyncOnceCell},
 };
 
 use super::{address::Virtual, constants::PAGE_SIZE, PageAllocator};

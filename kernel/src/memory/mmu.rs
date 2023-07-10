@@ -593,7 +593,8 @@ impl<'a> Mmu<'a> {
         Ok(unsafe { get_table_mut(addr.as_ptr()) })
     }
 
-    // find free memory space of size "count * PAGE_SIZE" between min_addr and max_addr
+    // TODO: rewrite this to allow 4KB aligned and bigger than 512GB searchs.
+    /// Find free memory space of size "count * PAGE_SIZE" in `range`.
     pub fn find_free_pages(
         &self,
         count: usize,
@@ -602,7 +603,7 @@ impl<'a> Mmu<'a> {
     ) -> Result<VirtualAddress, Error> {
         assert!(count > 0);
         assert!(!range.is_empty());
-        assert!(count <= (range.end - range.start));
+        assert!((count << PAGE_SHIFT) <= (range.end.addr() - range.start.addr()));
         assert!(range.start.is_aligned_to(PAGE_SIZE));
         assert!(range.end.is_aligned_to(PAGE_SIZE));
         assert!(
@@ -611,7 +612,7 @@ impl<'a> Mmu<'a> {
             "Virtual memory regions must be aligned to 1 GB"
         );
         assert!(
-            range.end - range.start <= 512 * 1024 * 1024 * 1024,
+            range.end.addr() - range.start.addr() <= 512 * 1024 * 1024 * 1024,
             "Find free pages doesn't support search range larger than 512 GB"
         );
         assert!(
