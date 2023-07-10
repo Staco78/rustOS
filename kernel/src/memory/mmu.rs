@@ -479,12 +479,12 @@ impl<'a> Mmu<'a> {
             )
         };
         let mut to = entry.addr();
-        for i in 0..ENTRIES_IN_TABLE {
+        for entry in l2 {
             if entry_size == MapSize::Size1GB {
-                l2[i] = TableEntry::create_block_descriptor(to, l_attrib, u_attrib);
+                *entry = TableEntry::create_block_descriptor(to, l_attrib, u_attrib);
                 to += 2 * 1024 * 1024; // 2 MB
             } else {
-                l2[i] = TableEntry::create_page_descriptor(to, l_attrib, u_attrib);
+                *entry = TableEntry::create_page_descriptor(to, l_attrib, u_attrib);
                 to += 0x1000; // 4 KB
             }
         }
@@ -517,10 +517,10 @@ impl<'a> Mmu<'a> {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
-            self.get_table(&mut l0[get_page_level_index(addr, PageLevel::L0)])?
+            self.get_table(&l0[get_page_level_index(addr, PageLevel::L0)])?
         };
-        let l2 = self.get_table(&mut l1[get_page_level_index(addr, PageLevel::L1)])?;
-        let l3 = self.get_table(&mut l2[get_page_level_index(addr, PageLevel::L2)])?;
+        let l2 = self.get_table(&l1[get_page_level_index(addr, PageLevel::L1)])?;
+        let l3 = self.get_table(&l2[get_page_level_index(addr, PageLevel::L2)])?;
         let entry = &mut l3[get_page_level_index(addr, PageLevel::L3)];
 
         if !entry.is_present() {
@@ -542,9 +542,9 @@ impl<'a> Mmu<'a> {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
-            self.get_table(&mut l0[get_page_level_index(addr, PageLevel::L0)])?
+            self.get_table(&l0[get_page_level_index(addr, PageLevel::L0)])?
         };
-        let l2 = self.get_table(&mut l1[get_page_level_index(addr, PageLevel::L1)])?;
+        let l2 = self.get_table(&l1[get_page_level_index(addr, PageLevel::L1)])?;
         let entry = &mut l2[get_page_level_index(addr, PageLevel::L2)];
 
         if !entry.is_present() {
@@ -566,7 +566,7 @@ impl<'a> Mmu<'a> {
             addr_space.get_table_mut()
         } else {
             let l0 = addr_space.get_table_mut();
-            self.get_table(&mut l0[get_page_level_index(addr, PageLevel::L0)])?
+            self.get_table(&l0[get_page_level_index(addr, PageLevel::L0)])?
         };
         let entry = &mut l1[get_page_level_index(addr, PageLevel::L1)];
 
@@ -595,6 +595,7 @@ impl<'a> Mmu<'a> {
 
     // TODO: rewrite this to allow 4KB aligned and bigger than 512GB searchs.
     /// Find free memory space of size "count * PAGE_SIZE" in `range`.
+    #[allow(clippy::needless_range_loop)]
     pub fn find_free_pages(
         &self,
         count: usize,
@@ -632,13 +633,13 @@ impl<'a> Mmu<'a> {
         } else {
             let l0 = addr_space.get_table();
             let r = self.get_table(&l0[l0_index]);
-            let table = match r {
+
+            match r {
                 Err(Error::Memory(AlreadyMapped)) => return Err(Error::Memory(OutOfVirtualSpace)),
                 Err(Error::Memory(NotMapped)) => return Ok(range.start),
                 Err(e) => return Err(e),
                 Ok(table) => table,
-            };
-            table
+            }
         };
 
         let page_off = if addr_space.is_low {

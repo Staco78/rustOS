@@ -35,7 +35,10 @@ const TARGET_BLACKLIST_TRACE: &[&str] = &[
     "smp",
     "fs",
     "exceptions",
+    "devices",
 ];
+
+const MODULES_BLACKLIST: &[&str] = &["nvme"];
 
 impl log::Log for KernelLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
@@ -51,6 +54,18 @@ impl log::Log for KernelLogger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
+            let module = if let Some(path) = record.file() && path.starts_with("modules/") {
+                record
+                    .module_path()
+                    .and_then(|path| path.split("::").next())
+            } else {
+                None
+            };
+
+            if let Some(module) = module && MODULES_BLACKLIST.contains(&module) {
+                return;
+            }
+
             let output: &mut dyn Write = unsafe {
                 if OUTPUT.is_some() {
                     OUTPUT.as_deref_mut().unwrap()

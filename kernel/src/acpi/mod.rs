@@ -51,7 +51,7 @@ pub unsafe fn init(tables: &[ConfigTableEntry]) -> Result<(), Error> {
 
 #[inline]
 pub fn iter_tables() -> Option<AcpiIterator> {
-    RSDP.get().and_then(|rsdp| Some(rsdp.iter()))
+    RSDP.get().map(|rsdp| rsdp.iter())
 }
 
 pub unsafe fn get_table<T>(signature: Signature) -> Option<&'static T> {

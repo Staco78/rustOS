@@ -9,7 +9,7 @@ use crate::error::Error;
 use super::node::FsNodeRef;
 
 pub trait Driver: Send + Sync + Debug {
-    fn fs_type<'a>(&'a self) -> &'a str;
+    fn fs_type(&self) -> &str;
 
     /// Get the root node of the filesystem on `device`. This is the node that will be mounted.
     fn get_root_node(&self, device: &FsNodeRef) -> Result<FsNodeRef, Error>;

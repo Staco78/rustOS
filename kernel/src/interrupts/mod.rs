@@ -76,6 +76,7 @@ pub fn msi_chip() -> &'static dyn MsiChip {
 
 pub type Handler = fn(u32, *mut InterruptFrame, usize) -> *mut InterruptFrame;
 pub type SimpleHandler = fn(u32, usize);
+#[allow(clippy::declare_interior_mutable_const)]
 const DEFAULT_HANDLER: AtomicU128 = AtomicU128::new(0);
 static IRQ_HANDLERS: [AtomicU128; 1020] = [DEFAULT_HANDLER; 1020];
 

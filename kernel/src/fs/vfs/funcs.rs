@@ -1,4 +1,4 @@
-use alloc::{format, string::ToString, vec::Vec};
+use alloc::{format, vec::Vec};
 use spin::lock_api::RwLock;
 
 use crate::{
@@ -57,7 +57,7 @@ where
         None => {
             return Err(Error::Fs(Custom(format!(
                 "Unknown filesystem type: {}",
-                fs_type.to_string()
+                fs_type
             ))))
         }
     };

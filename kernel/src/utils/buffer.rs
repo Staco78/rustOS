@@ -40,6 +40,11 @@ impl Buffer {
         self.slice.len()
     }
 
+    #[inline(always)]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn new_boxed(len: usize) -> Box<Self> {
         let slice = Box::new_uninit_slice(len);
         let raw = Box::into_raw(slice);

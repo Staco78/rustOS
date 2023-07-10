@@ -117,7 +117,7 @@ fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
     let ptr = (&start_infos as *const StartInfos).addr();
     let ptr = VirtualAddress::new(ptr).to_phys().unwrap();
 
-    unsafe { psci::cpu_on(id as u32, entry, ptr.addr() as u64) };
+    unsafe { psci::cpu_on(id, entry, ptr.addr() as u64) };
 
     while start_infos.has_started.load(Ordering::Acquire) != 1 {
         core::hint::spin_loop();

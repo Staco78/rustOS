@@ -49,7 +49,7 @@ unsafe impl Sync for Device {}
 
 impl Device {
     pub fn new(pci_device: PciDevice) -> Self {
-        let bar0 = pci_device.bars().nth(0).expect("NVMe device has not BAR0");
+        let bar0 = pci_device.bars().next().expect("NVMe device has not BAR0");
         let bar0_paddr = bar0.addr;
         let page_count = bar0.size.div_ceil(PAGE_SIZE);
         let bar0_vaddr = unsafe {
@@ -90,7 +90,7 @@ impl Device {
             let msix_capability = msix_capability.expect("Device doesn't support MSI-X interrupts");
             #[allow(clippy::cast_ref_to_mut)]
             unsafe {
-                (&mut *(msix_capability as *const _ as *mut MsixCapability)).enable()
+                (*(msix_capability as *const _ as *mut MsixCapability)).enable()
             };
             let (bar, off) = msix_capability.table();
             assert_eq!(bar, 0);
@@ -138,7 +138,7 @@ impl Device {
         let namespaces = self.identify_namespace_list()?;
         for namespace in namespaces {
             let infos = self.identify_namespace(namespace)?;
-            let namespace = Namespace::new(Arc::clone(&self), infos)?;
+            let namespace = Namespace::new(Arc::clone(self), infos)?;
             kernel::disks::register_disk(namespace);
         }
         Ok(())

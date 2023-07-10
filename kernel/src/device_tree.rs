@@ -156,7 +156,7 @@ impl Node {
     pub fn properties(&self) -> NodePropertiesIterator {
         NodePropertiesIterator {
             buff: Buff::new(self.data),
-            str_buff: &self.str_buff,
+            str_buff: self.str_buff,
             address_cells: self.address_cells,
             size_cells: self.size_cells,
         }
@@ -165,7 +165,7 @@ impl Node {
     pub fn children(&self) -> NodeChildrenIterator {
         NodeChildrenIterator {
             buff: Buff::new(self.data),
-            str_buff: &self.str_buff,
+            str_buff: self.str_buff,
             address_cells: self.address_cells,
             size_cells: self.size_cells,
         }
@@ -221,7 +221,7 @@ impl Iterator for NodePropertiesIterator {
             FDT_BEGIN_NODE => {
                 get_node_in_buff(
                     &mut self.buff,
-                    &self.str_buff,
+                    self.str_buff,
                     self.address_cells,
                     self.size_cells,
                 )
@@ -262,7 +262,7 @@ impl Iterator for NodeChildrenIterator {
             FDT_BEGIN_NODE => {
                 let node = get_node_in_buff(
                     &mut self.buff,
-                    &self.str_buff,
+                    self.str_buff,
                     self.address_cells,
                     self.size_cells,
                 )
@@ -377,7 +377,7 @@ pub fn init(dtb: &'static [u8]) -> Result<(), ()> {
 
 /// Find a node with the path `path`. `path` should start with '/'.
 pub fn get_node(path: &str) -> Option<Node> {
-    debug_assert_eq!(path.chars().nth(0), Some('/'));
+    debug_assert_eq!(path.chars().next(), Some('/'));
     let mut current_node = ROOT_NODE
         .get()
         .expect("Device tree not initialized")
@@ -391,22 +391,19 @@ pub fn get_node(path: &str) -> Option<Node> {
 /// The same as `get_node` except that instead of == comparaison
 /// each node's name should start with the path component and an '@'.
 pub fn get_node_weak(path: &str) -> Option<Node> {
-    debug_assert_eq!(path.chars().nth(0), Some('/'));
+    debug_assert_eq!(path.chars().next(), Some('/'));
     let mut current_node = ROOT_NODE
         .get()
         .expect("Device tree not initialized")
         .clone();
     for name in path[1..].split('/') {
-        current_node = current_node
-            .children()
-            .filter(|c| {
-                c.name().starts_with(name)
-                    && c.name()
-                        .chars()
-                        .nth(name.len())
-                        .map_or_else(|| true, |c| c == '@')
-            })
-            .next()?;
+        current_node = current_node.children().find(|c| {
+            c.name().starts_with(name)
+                && c.name()
+                    .chars()
+                    .nth(name.len())
+                    .map_or_else(|| true, |c| c == '@')
+        })?;
     }
     Some(current_node)
 }

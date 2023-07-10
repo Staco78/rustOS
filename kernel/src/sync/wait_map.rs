@@ -70,3 +70,9 @@ impl<T: Ord> WaitMap<T> {
         self.wait_key(None, drop);
     }
 }
+
+impl<T: Ord> Default for WaitMap<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

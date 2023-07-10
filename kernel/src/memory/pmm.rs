@@ -32,7 +32,7 @@ impl PhysicalMemoryManager {
         let bitmap = unsafe {
             slice::from_raw_parts_mut(
                 bitmap_ptr.to_virt().as_ptr::<u8>(),
-                (bitmap_page_count * PAGE_SIZE) as usize,
+                bitmap_page_count * PAGE_SIZE,
             )
         };
 
@@ -55,14 +55,14 @@ impl PhysicalMemoryManager {
     }
 
     fn is_memory_type_usable(mem_type: MemoryType) -> bool {
-        match mem_type {
-            MemoryType::CONVENTIONAL => true,
-            MemoryType::BOOT_SERVICES_CODE => true,
-            MemoryType::BOOT_SERVICES_DATA => true,
-            MemoryType::LOADER_CODE => true,
-            MemoryType::LOADER_DATA => true,
-            _ => false,
-        }
+        matches!(
+            mem_type,
+            MemoryType::CONVENTIONAL
+                | MemoryType::BOOT_SERVICES_CODE
+                | MemoryType::BOOT_SERVICES_DATA
+                | MemoryType::LOADER_CODE
+                | MemoryType::LOADER_DATA
+        )
     }
 
     // find free space in memory map (used to find where to put the bitmap)
@@ -99,19 +99,19 @@ impl PhysicalMemoryManager {
                 let byte_start = if is_start_aligned {
                     start_page / 8
                 } else {
-                    self.set_free_range(start_page as usize, 8 - (start_page % 8) as usize);
+                    self.set_free_range(start_page, 8 - (start_page % 8));
                     start_page / 8 + 1
                 };
 
                 let byte_end = if is_end_aligned {
                     end_page / 8
                 } else {
-                    self.set_free_range((end_page & !7) as usize, end_page as usize % 8);
+                    self.set_free_range(end_page & !7, end_page % 8);
                     end_page / 8
                 };
 
                 if byte_start <= byte_end {
-                    self.bitmap[byte_start as usize..byte_end as usize].fill(0);
+                    self.bitmap[byte_start..byte_end].fill(0);
                 }
             }
         }
@@ -168,7 +168,7 @@ impl PhysicalMemoryManager {
         debug!(
             "Physical bitmap: {} pages {}",
             len,
-            ByteSize(len * PAGE_SIZE as usize)
+            ByteSize(len * PAGE_SIZE)
         );
         let mut used = self.is_used(0);
         let mut from = 0;
@@ -249,30 +249,29 @@ impl PhysicalMemoryManager {
         if (val & mask) == 0 {
             // if the alloc fit in the bitmap element (u8)
             if count <= u8::BITS as usize - bit_i {
-                return Ok(bit_i);
+                Ok(bit_i)
             } else {
                 let remaining_count = count - (u8::BITS as usize - bit_i);
 
                 // the count of elements that needs to be 0 for the alloc to succeed
                 let full_elements = remaining_count / u8::BITS as usize;
 
-                for i in 1..full_elements + 1 {
-                    let v = bitmap[i];
+                for (i, &v) in bitmap.iter().enumerate().skip(1).take(full_elements) {
                     if v != 0 {
                         return Err(i * u8::BITS as usize);
                     }
                 }
 
                 let remaining_bits = remaining_count % u8::BITS as usize;
-                let mask = !(1 << (u8::BITS as usize - remaining_bits) - 1);
+                let mask = !(1 << ((u8::BITS as usize - remaining_bits) - 1));
                 if bitmap[full_elements + 1] & mask == 0 {
-                    return Ok(bit_i);
+                    Ok(bit_i)
                 } else {
-                    return Err((full_elements + 1) * u8::BITS as usize);
+                    Err((full_elements + 1) * u8::BITS as usize)
                 }
             }
         } else {
-            return Err(bit_i + (val << bit_i).leading_zeros() as usize);
+            Err(bit_i + (val << bit_i).leading_zeros() as usize)
         }
     }
 

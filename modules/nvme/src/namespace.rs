@@ -222,6 +222,7 @@ impl Disk for Namespace {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn data_addrs(
     pages_count: usize,
     buff_addr: PhysicalAddress,

@@ -107,7 +107,7 @@ extern "C" fn main(
         if let Some(table) = acpi::get_table::<Spcr>(Signature::SPCR) {
             if (*table).get_serial_type() == spcr::SerialType::Pl011UART {
                 Some(pl011_uart::Pl011::new(
-                    PhysicalAddress::new((*table).address.address as usize).to_virt(),
+                    PhysicalAddress::new(table.address.address as usize).to_virt(),
                 ))
             } else {
                 None

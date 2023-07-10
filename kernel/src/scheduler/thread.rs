@@ -121,8 +121,8 @@ impl Thread {
                 .unwrap_unchecked()
         };
 
-        regs.sp = (user_stack_base + USER_STACK_PAGE_COUNT * PAGE_SIZE).addr() as u64;
-        regs.pc = entry as u64;
+        regs.sp = (user_stack_base + USER_STACK_PAGE_COUNT * PAGE_SIZE).addr();
+        regs.pc = entry as usize;
         regs.pstate = 4; // interrupts enabled, EL1t
 
         let thread = Self {

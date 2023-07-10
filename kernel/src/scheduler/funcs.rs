@@ -99,7 +99,7 @@ pub fn block_thread() {
 
 #[inline]
 /// Same as `block_thread` but also drop `val` while owning a lock that prevent others thread from unblocking it.
-/// 
+///
 /// May help to prevent race conditions if `val` is a lock guard.
 pub fn block_thread_drop<T>(val: T) {
     let current_thread = current_thread();

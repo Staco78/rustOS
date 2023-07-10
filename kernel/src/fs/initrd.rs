@@ -103,8 +103,8 @@ impl Driver {
 }
 
 impl drivers::Driver for Driver {
-    fn fs_type<'a>(&'a self) -> &'a str {
-        "tar"
+    fn fs_type(&self) -> &str {
+       "tar" 
     }
 
     fn get_root_node(&self, device: &FsNodeRef) -> Result<FsNodeRef, Error> {
@@ -115,7 +115,7 @@ impl drivers::Driver for Driver {
         let fs = Arc::new_cyclic(|weak| FileSystem::new(weak.clone(), data_));
         self.filesystems.lock().push((Arc::clone(&fs), data));
 
-        Ok(fs.root_node().clone())
+        Ok(fs.root_node())
     }
 }
 

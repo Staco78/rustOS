@@ -16,21 +16,21 @@ impl Path {
     }
 
     pub fn is_absolute(&self) -> bool {
-        if let Some(first) = self.inner.chars().nth(0) {
+        if let Some(first) = self.inner.chars().next() {
             first == '/'
         } else {
             false
         }
     }
 
-    pub fn components<'a>(&'a self) -> impl DoubleEndedIterator<Item = &str> {
+    pub fn components(&self) -> impl DoubleEndedIterator<Item = &str> {
         self.inner.split('/')
     }
 
     pub fn file_name(&self) -> Option<&str> {
         self.components()
             .next_back()
-            .and_then(|p| if p == "" { None } else { Some(p) })
+            .and_then(|p| if p.is_empty() { None } else { Some(p) })
     }
 }
 

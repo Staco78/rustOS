@@ -259,10 +259,8 @@ unsafe impl<'a> GlobalAlloc for Allocator<'a> {
                 *head = ptr::null_mut();
             }
 
-            self.page_allocator().dealloc(
-                VirtualAddress::new(chunk.addr()),
-                chunk_ref.page_count as usize,
-            );
+            self.page_allocator()
+                .dealloc(VirtualAddress::new(chunk.addr()), chunk_ref.page_count);
         }
     }
 }

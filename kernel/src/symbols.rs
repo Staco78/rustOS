@@ -22,5 +22,5 @@ pub fn init() {
 
 #[inline]
 pub fn get(name: &str) -> Option<usize> {
-    unsafe { SYMBOLS.get(name).map(|a| *a) }
+    unsafe { SYMBOLS.get(name).copied() }
 }

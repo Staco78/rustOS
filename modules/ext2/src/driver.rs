@@ -17,7 +17,7 @@ pub struct Driver {
 }
 
 impl fs::Driver for Driver {
-    fn fs_type<'a>(&'a self) -> &'a str {
+    fn fs_type(&self) -> &str {
         "ext2"
     }
 

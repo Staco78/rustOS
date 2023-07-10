@@ -106,7 +106,7 @@ impl InterruptsChip for GenericInterruptController {
 
 pub fn init() {
     static CHIP: Once<(GenericInterruptController, Option<MsiExtension>)> = Once::new();
-    let (chip, msi) = CHIP.call_once(|| GenericInterruptController::new());
+    let (chip, msi) = CHIP.call_once(GenericInterruptController::new);
     interrupts::register_chip(chip);
     if let Some(msi) = msi {
         interrupts::register_msi_chip(msi);

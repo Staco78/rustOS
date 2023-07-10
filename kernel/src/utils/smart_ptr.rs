@@ -84,16 +84,21 @@ impl<T: ?Sized + Debug> Debug for SmartPtr<T> {
 
 pub trait SmartBuff<T> {
     // Safety: don't change the ref_count value.
-    unsafe fn data<'a>(&'a self) -> &'a [SmartPtrInner<MaybeUninit<T>>];
+    unsafe fn data(&self) -> &[SmartPtrInner<MaybeUninit<T>>];
 
     // Safety: don't change the ref_count value.
-    unsafe fn data_mut<'a>(&'a mut self) -> &'a mut [SmartPtrInner<MaybeUninit<T>>];
+    unsafe fn data_mut(&mut self) -> &mut [SmartPtrInner<MaybeUninit<T>>];
 
     fn drop(&self) -> bool;
 
     #[inline(always)]
     fn len(&self) -> usize {
         unsafe { self.data().len() }
+    }
+
+    #[inline(always)]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Store `value` if a place is found and return it index and a `SmartPtr` over it.
@@ -160,7 +165,7 @@ pub trait SmartBuff<T> {
     }
 
     #[inline]
-    fn iter<'a>(&'a self) -> SmartBuffIter<'a, Self, T>
+    fn iter(&self) -> SmartBuffIter<Self, T>
     where
         Self: Sized,
     {
@@ -240,12 +245,12 @@ impl<T> SmartPtrBuff<T> {
 
         Self { data, drop }
     }
+}
 
-    pub fn from_iter<I>(iter: I) -> Self
-    where
-        I: Iterator<Item = T>,
-    {
+impl<T> FromIterator<T> for SmartPtrBuff<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let vec: Vec<SmartPtrInner<MaybeUninit<T>>> = iter
+            .into_iter()
             .map(|v| SmartPtrInner {
                 ref_count: Mutex::new(1),
                 data: MaybeUninit::new(v),
@@ -258,11 +263,11 @@ impl<T> SmartPtrBuff<T> {
 
 impl<T> SmartBuff<T> for SmartPtrBuff<T> {
     #[inline(always)]
-    unsafe fn data<'a>(&'a self) -> &'a [SmartPtrInner<MaybeUninit<T>>] {
+    unsafe fn data(&self) -> &[SmartPtrInner<MaybeUninit<T>>] {
         &self.data
     }
     #[inline(always)]
-    unsafe fn data_mut<'a>(&'a mut self) -> &'a mut [SmartPtrInner<MaybeUninit<T>>] {
+    unsafe fn data_mut(&mut self) -> &mut [SmartPtrInner<MaybeUninit<T>>] {
         &mut self.data
     }
     #[inline(always)]
@@ -296,11 +301,11 @@ impl<T, const N: usize> SmartPtrSizedBuff<T, N> {
 
 impl<T, const N: usize> SmartBuff<T> for SmartPtrSizedBuff<T, N> {
     #[inline(always)]
-    unsafe fn data<'a>(&'a self) -> &'a [SmartPtrInner<MaybeUninit<T>>] {
+    unsafe fn data(&self) -> &[SmartPtrInner<MaybeUninit<T>>] {
         self.data.deref()
     }
     #[inline(always)]
-    unsafe fn data_mut<'a>(&'a mut self) -> &'a mut [SmartPtrInner<MaybeUninit<T>>] {
+    unsafe fn data_mut(&mut self) -> &mut [SmartPtrInner<MaybeUninit<T>>] {
         self.data.deref_mut()
     }
     #[inline(always)]

@@ -35,3 +35,9 @@ impl<T> WaitQueue<T> {
         }
     }
 }
+
+impl<T> Default for WaitQueue<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

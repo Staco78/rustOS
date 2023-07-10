@@ -14,7 +14,7 @@ use elf::{
     section::SectionHeader,
     ElfBytes,
 };
-use log::{warn, info};
+use log::{info, warn};
 
 use crate::{
     error::{Error, ModuleLoadError::*},
@@ -34,7 +34,11 @@ pub fn load(path: &str) -> Result<(), Error> {
     let mut loader = Loader::new(&buff)?;
     loader.load()?;
 
-    info!("Module {} loaded at address {}", path, loader.load_address.expect("No load address"));
+    info!(
+        "Module {} loaded at address {}",
+        path,
+        loader.load_address.expect("No load address")
+    );
 
     Ok(())
 }
@@ -49,13 +53,17 @@ impl From<elf::ParseError> for Error {
 struct Loader<'a> {
     file: ElfBytes<'a, LittleEndian>,
     data: &'a [u8],
-    load_address: Option<VirtualAddress>
+    load_address: Option<VirtualAddress>,
 }
 
 impl<'a> Loader<'a> {
     fn new(data: &'a [u8]) -> Result<Self, Error> {
         let file = ElfBytes::minimal_parse(data)?;
-        Ok(Self { file, data, load_address: None })
+        Ok(Self {
+            file,
+            data,
+            load_address: None,
+        })
     }
 
     fn load(&mut self) -> Result<(), Error> {
@@ -71,14 +79,16 @@ impl<'a> Loader<'a> {
 
         self.load_sections(&mut sections)?;
 
-        let (symtab, strtab) = self
-            .file
-            .symbol_table()?
-            .ok_or(Error::ModuleLoad(LoadingError("No symtab")))?;
+        let (strtab, mut symbols) = {
+            let (symtab, strtab) = self
+                .file
+                .symbol_table()?
+                .ok_or(Error::ModuleLoad(LoadingError("No symtab")))?;
 
-        let mut symbols = Vec::with_capacity(symtab.len());
-        symbols.extend(symtab.iter());
-        drop(symtab);
+            let mut symbols = Vec::with_capacity(symtab.len());
+            symbols.extend(symtab.iter());
+            (strtab, symbols)
+        };
 
         let mut init = None;
 
@@ -95,8 +105,9 @@ impl<'a> Loader<'a> {
                     }
                 }
             } else if symbol.st_shndx < 0xFF00 {
-                symbol.st_value += sections[symbol.st_shndx as usize].sh_addr as u64;
+                symbol.st_value += sections[symbol.st_shndx as usize].sh_addr;
                 let value = symbol.st_value as usize;
+                #[allow(clippy::single_match)]
                 match strtab.get(symbol.st_name as usize)? {
                     "init" => init = Some(VirtualAddress::new(value)),
                     _ => {}
@@ -182,7 +193,7 @@ impl<'a> Loader<'a> {
 
     /// Load all the sections marked with `SHF_ALLOC` into module space memory
     /// Update each `sh_addr` to where the section is in memory.
-    fn load_sections(&mut self, sections: &mut Vec<SectionHeader>) -> Result<(), Error> {
+    fn load_sections(&mut self, sections: &mut [SectionHeader]) -> Result<(), Error> {
         let mut alloc_size = 0usize;
         for section in sections.iter() {
             if (section.sh_flags & SHF_ALLOC as u64) != 0 {

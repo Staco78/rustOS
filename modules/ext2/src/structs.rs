@@ -169,7 +169,7 @@ assert_eq_size!(Inode, [u8; 128]);
 
 #[derive(Debug)]
 pub enum Type {
-    FIFO,
+    Fifo,
     CharDev,
     Dir,
     BlockDev,
@@ -183,7 +183,7 @@ impl TryFrom<u16> for Type {
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         let value = value & 0xF000;
         match value {
-            0x1000 => Ok(Self::FIFO),
+            0x1000 => Ok(Self::Fifo),
             0x2000 => Ok(Self::CharDev),
             0x4000 => Ok(Self::Dir),
             0x6000 => Ok(Self::BlockDev),

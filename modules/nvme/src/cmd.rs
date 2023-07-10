@@ -182,6 +182,7 @@ impl Command {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl Into<SubmissionEntry> for Command {
     fn into(self) -> SubmissionEntry {
         static ID_COUNTER: AtomicU16 = AtomicU16::new(0);

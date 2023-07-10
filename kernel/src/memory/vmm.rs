@@ -259,9 +259,7 @@ impl<'a> VirtualMemoryManager<'a> {
             .alloc(count)
             .ok_or(Error::Memory(OutOfPhysicalMemory))?;
 
-        Ok(self
-            .mmu
-            .map(addr, phys_addr, count, flags, &mut addr_space)?)
+        self.mmu.map(addr, phys_addr, count, flags, &mut addr_space)
     }
 }
 

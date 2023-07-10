@@ -5,6 +5,8 @@
 
 extern crate alloc;
 
+use core::ptr;
+
 use alloc::{sync::Arc, vec::Vec};
 use device::Device;
 use kernel::{bus::pcie::PciDevice, devices, error::Error, interrupts};
@@ -47,7 +49,7 @@ fn set_interrupt_handler(id: u32, device: &Device) {
     let (device_id, _) = devices
         .iter()
         .enumerate()
-        .find(|&(_, d)| d.as_ref() as *const _ == device as *const _)
+        .find(|&(_, d)| ptr::eq(d.as_ref(), device))
         .expect("Device not in Vec yet");
 
     interrupts::set_simple_irq_handler(id, interrupt_handler, device_id);

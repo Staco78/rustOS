@@ -329,18 +329,17 @@ fn action_dtb(_args: Args) -> Result<ActionRef, Box<dyn Error>> {
 
 fn action_clippy(args: Args) -> Result<ActionRef, Box<dyn Error>> {
     let clippy = |manifest: &str, target: &str, lib: bool| -> Result<(), Box<dyn Error>> {
-        let cmd_args: &[&str] = if lib {
-            &["--lib", "--keep-going", "-Zunstable-options"]
-        } else {
-            &["--keep-going", "-Zunstable-options"]
-        };
+        let mut cmd_args = vec!["--keep-going", "-Zunstable-options"];
+        if lib {
+            cmd_args.push("--lib");
+        }
         Box::new(CargoCmdAction::new(
             manifest,
             None,
             "clippy",
             args.release,
             Some(target),
-            cmd_args,
+            &cmd_args,
             vec![],
         ))
         .run()

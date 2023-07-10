@@ -258,6 +258,6 @@ macro_rules! no_irq {
     ($inner:block) => {{
         let __daif_state = $crate::exceptions::disable_exceptions();
         $inner;
-        crate::exceptions::restore_exceptions(__daif_state);
+        $crate::exceptions::restore_exceptions(__daif_state);
     }};
 }

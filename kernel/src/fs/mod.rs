@@ -1,11 +1,11 @@
 use crate::memory::PhysicalAddress;
 
+pub(crate) mod devfs;
 mod drivers;
 mod initrd;
 pub mod path;
 mod utils;
 mod vfs;
-pub(crate) mod devfs;
 
 pub use drivers::*;
 pub use utils::*;
