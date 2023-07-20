@@ -4,7 +4,7 @@ use spin::lock_api::RwLock;
 use crate::{
     error::{
         Error,
-        FsError::{Custom, CustomStr, NotFound},
+        FsError::{self, Custom, CustomStr, NotFound},
     },
     fs::{drivers::get_driver_for_type, path::Path},
 };
@@ -33,6 +33,8 @@ where
     for path_part in path_in_mountpoint[1..].split('/') {
         // TODO: remove the unwrap().
         current_node = current_node
+            .as_dir()
+            .ok_or(Error::Fs(FsError::NotADir))?
             .find(path_part)
             .unwrap()
             .ok_or(Error::Fs(NotFound))?;

@@ -2,6 +2,7 @@ use core::{
     fmt::Debug,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
+    slice::SliceIndex,
 };
 
 use alloc::boxed::Box;
@@ -34,6 +35,10 @@ impl Buffer {
     pub const fn from_init_slice(slice: &[u8]) -> &Self {
         unsafe { &*(Self::from_slice_ptr(slice as *const [u8] as _)) }
     }
+    #[inline(always)]
+    pub fn from_init_slice_mut(slice: &mut [u8]) -> &mut Self {
+        unsafe { &mut *(Self::from_slice_ptr_mut(slice as *mut [u8] as _)) }
+    }
 
     #[inline(always)]
     pub const fn len(&self) -> usize {
@@ -60,9 +65,26 @@ impl Buffer {
     }
 
     #[inline]
-    pub fn write(&mut self, offset: usize, buff: &[u8]) {
+    pub fn slice<I>(&self, index: I) -> &Buffer
+    where
+        I: SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        Buffer::from_slice(&self.slice[index])
+    }
+
+    #[inline]
+    pub fn slice_mut<I>(&mut self, index: I) -> &mut Buffer
+    where
+        I: SliceIndex<[MaybeUninit<u8>], Output = [MaybeUninit<u8>]>,
+    {
+        Buffer::from_slice_mut(&mut self.slice[index])
+    }
+
+    #[inline]
+    pub fn write(&mut self, offset: usize, buff: &[u8]) -> usize {
         let slice = &mut self.slice[offset..offset + buff.len()];
         MaybeUninit::write_slice(slice, buff);
+        buff.len()
     }
 
     pub fn phys(&self) -> PhysicalAddress {

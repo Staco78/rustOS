@@ -30,7 +30,7 @@ where
     let cpus = device_tree::get_node_weak("/cpus").expect("No cpus node in device tree");
     let (address_cells, size_cells) = (cpus.address_cells(), cpus.size_cells());
     assert!(address_cells == 1 && size_cells == 0); // we don't support others cells size
-    let cpu_nodes = cpus.children().filter(|c| c.name().starts_with("cpu@0"));
+    let cpu_nodes = cpus.children().filter(|c| c.name().starts_with("cpu@"));
 
     for cpu in cpu_nodes {
         let reg = cpu.get_property("reg").unwrap();

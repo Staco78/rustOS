@@ -5,7 +5,7 @@ use core::{
     sync::atomic::{AtomicU16, Ordering},
 };
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use alloc::{sync::Arc, vec};
 use hashbrown::HashMap;
 use kernel::{
@@ -139,7 +139,7 @@ impl Device {
         for namespace in namespaces {
             let infos = self.identify_namespace(namespace)?;
             let namespace = Namespace::new(Arc::clone(self), infos)?;
-            kernel::disks::register_disk(namespace);
+            kernel::fs::block::register_device(Box::new(namespace));
         }
         Ok(())
     }

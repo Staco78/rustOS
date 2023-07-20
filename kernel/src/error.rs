@@ -46,6 +46,21 @@ pub enum FsError {
 
     #[error("Invalid filesystem")]
     InvalidFS,
+
+    #[error("Read only")]
+    ReadOnly,
+
+    #[error("Not a directory")]
+    NotADir,
+
+    #[error("Not a file")]
+    NotAFile,
+
+    #[error("Not a block device")]
+    NotABlock,
+
+    #[error("End of file")]
+    EndOfFile,
 }
 
 #[derive(Error, Debug, Clone)]

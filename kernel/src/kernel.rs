@@ -16,19 +16,20 @@
 #![feature(coerce_unsized)]
 #![feature(new_uninit)]
 #![feature(error_in_core)]
-#![feature(is_some_and)]
 #![feature(maybe_uninit_as_bytes)]
-#![feature(vec_into_raw_parts)]
 #![feature(assert_matches)]
 #![feature(integer_atomics)]
 #![feature(maybe_uninit_slice)]
+#![feature(nonnull_slice_from_raw_parts)]
+#![feature(ptr_metadata)]
+#![feature(never_type)]
+#![feature(unwrap_infallible)]
 
 pub mod acpi;
 pub mod bus;
 pub mod cpu;
 pub mod device_tree;
 pub mod devices;
-pub mod disks;
 pub mod error;
 pub mod fs;
 pub mod interrupts;

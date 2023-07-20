@@ -17,7 +17,7 @@ use elf::{
 use log::{info, warn};
 
 use crate::{
-    error::{Error, ModuleLoadError::*},
+    error::{Error, FsError, ModuleLoadError::*},
     fs::{self},
     memory::{
         vmm::{vmm, MapFlags, MemoryUsage},
@@ -28,7 +28,8 @@ use crate::{
 };
 
 pub fn load(path: &str) -> Result<(), Error> {
-    let file = fs::get_node(path)?;
+    let node = fs::get_node(path)?;
+    let file = node.as_file().ok_or(Error::Fs(FsError::NotAFile))?;
 
     let buff = file.read_to_end_vec(0)?;
     let mut loader = Loader::new(&buff)?;

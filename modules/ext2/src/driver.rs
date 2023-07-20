@@ -12,11 +12,11 @@ pub static DRIVER: Driver = Driver {
 };
 
 #[derive(Debug)]
-pub struct Driver {
-    filesystems: Mutex<Vec<Arc<FileSystem>>>,
+pub struct Driver<'a> {
+    filesystems: Mutex<Vec<Arc<FileSystem<'a>>>>,
 }
 
-impl fs::Driver for Driver {
+impl<'a> fs::Driver for Driver<'a> {
     fn fs_type(&self) -> &str {
         "ext2"
     }

@@ -1,6 +1,9 @@
 #![allow(unused)]
 
+use crate::filesystem::InodeIndex;
+
 pub const FILE_NODE_BUFF_SIZE: usize = 20;
+pub const INODE_CACHE_GROUP_SIZE: usize = 128;
 
 pub const SIGNATURE: u16 = 0xEF53;
 
@@ -19,3 +22,5 @@ pub const REQUIRED_FEATURE_JOURNAL: u32 = 0x8;
 pub const REQUIRED_WRITE_FEATURE_SPARSE_SUPER: u32 = 0x1;
 pub const REQUIRED_WRITE_FEATURE_LARGE_FILE: u32 = 0x2;
 pub const REQUIRED_WRITE_FEATURE_BTREE_DIR: u32 = 0x4;
+
+pub const ROOT_INODE: InodeIndex = 2;

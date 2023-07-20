@@ -3,20 +3,18 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::{
-    ffi::CStr,
-    fmt::Debug,
-    mem::{transmute, MaybeUninit},
-    slice,
-};
+use core::{ffi::CStr, fmt::Debug, slice};
+use vfs::node::{Directory, File, FsNodeInfos};
 
 use crate::{
+    create_fs_node,
     error::Error,
     memory::PhysicalAddress,
     sync::no_irq_locks::NoIrqMutex,
     utils::{
+        buffer::Buffer,
         byte_size::ByteSize,
-        smart_ptr::{SmartBuff, SmartPtr, SmartPtrBuff, SmartPtrSizedBuff},
+        smart_ptr::{SmartBuff, SmartPtrBuff, SmartPtrSizedBuff},
     },
 };
 
@@ -104,44 +102,39 @@ impl Driver {
 
 impl drivers::Driver for Driver {
     fn fs_type(&self) -> &str {
-       "tar" 
+        "tar"
     }
 
-    fn get_root_node(&self, device: &FsNodeRef) -> Result<FsNodeRef, Error> {
-        // TODO: remove unwrap
-        let data = device.read_to_end_vec(0).unwrap();
-        // Safety: No filesystem deletion so `data` never dropped.
-        let data_ = unsafe { transmute::<&[u8], &'static [u8]>(&data) };
-        let fs = Arc::new_cyclic(|weak| FileSystem::new(weak.clone(), data_));
-        self.filesystems.lock().push((Arc::clone(&fs), data));
-
-        Ok(fs.root_node())
+    fn get_root_node(&self, _device: &FsNodeRef) -> Result<FsNodeRef, Error> {
+        unimplemented!()
     }
 }
 
 #[derive(Debug)]
 struct FileSystem {
-    files: SmartPtrBuff<Node>,
-    root_node_buff: SmartPtrSizedBuff<RootNode, 1>,
+    files: SmartPtrBuff<FsNode<Node>>,
+    root_node_buff: SmartPtrSizedBuff<FsNode<RootNode>, 1>,
 }
 
 impl FileSystem {
     fn new(self_weak: Weak<Self>, data: &'static [u8]) -> Self {
         let iter = TarIterator::new(data).map(|(h, d)| Node::new(h.name(), d));
-        let files = SmartPtrBuff::from_iter(iter);
+        let files = SmartPtrBuff::from_iter(
+            iter.map(|f| create_fs_node!(f, FsNodeInfos { size: f.data.len() }, file: dyn File)),
+        );
         let root_node_buff = SmartPtrSizedBuff::new(false);
         root_node_buff
-            .insert(RootNode { fs: self_weak })
+            .insert(create_fs_node!(
+                RootNode { fs: self_weak },
+                FsNodeInfos { size: files.len() },
+                directory: dyn Directory
+            ))
             .expect("Not enought space in buff");
 
         Self {
             files,
             root_node_buff,
         }
-    }
-
-    fn root_node(&self) -> SmartPtr<RootNode> {
-        self.root_node_buff.get(0).expect("RootNode not created")
     }
 }
 
@@ -150,11 +143,11 @@ struct RootNode {
     fs: Weak<FileSystem>,
 }
 
-impl FsNode for RootNode {
+unsafe impl Directory for RootNode {
     fn find(&self, name: &str) -> Result<Option<FsNodeRef>, Error> {
         let fs = self.fs.upgrade().unwrap();
         let file = fs.files.iter().find(|f| f.name == name);
-        Ok(file.map(|f| f as FsNodeRef))
+        Ok(file.map(FsNodeRef::new))
     }
 
     fn list(&self) -> Result<Vec<String>, Error> {
@@ -184,25 +177,17 @@ impl Node {
     }
 }
 
-impl FsNode for Node {
-    fn size(&self) -> Result<usize, Error> {
-        Ok(self.data.len())
-    }
-
-    fn read<'a>(
-        &self,
-        offset: usize,
-        buff: &'a mut [core::mem::MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Error> {
+unsafe impl File for Node {
+    fn read(&self, offset: usize, buff: &mut Buffer) -> Result<usize, Error> {
         if offset >= self.data.len() {
-            return Ok(&mut []);
+            return Ok(0);
         }
         let to_read = (self.data.len() - offset).min(buff.len());
         let end = offset + to_read;
 
-        let buff = MaybeUninit::write_slice(&mut buff[..to_read], &self.data[offset..end]);
+        buff.write(0, &self.data[offset..end]);
 
-        Ok(buff)
+        Ok(to_read)
     }
 }
 
@@ -218,5 +203,6 @@ pub unsafe fn init(initrd_ptr: PhysicalAddress, initrd_len: usize) {
         unsafe { Vec::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len, initrd_len) };
     DRIVER.filesystems.lock().push((fs.clone(), vec));
 
-    vfs::mount_node("/initrd", fs.root_node_buff.get(0).unwrap()).expect("Unable to mount initrd");
+    vfs::mount_node("/initrd", FsNodeRef::new(fs.root_node_buff.get(0).unwrap()))
+        .expect("Unable to mount initrd");
 }

@@ -18,7 +18,11 @@ stp x22, x23, [sp, #16 * 11]
 stp x24, x25, [sp, #16 * 12]
 stp x26, x27, [sp, #16 * 13]
 stp x28, x29, [sp, #16 * 14]
-mrs x0, SP_EL\stack_el
+.if \stack_el == 0
+mrs x0, SP_EL0
+.else
+mov x0, sp
+.endif
 stp x30, x0, [sp, #16 * 15]
 mrs x0, ELR_EL1
 mrs x1, SPSR_EL1

@@ -7,7 +7,7 @@ use core::{
 };
 
 use alloc::{boxed::Box, vec::Vec};
-use spin::lock_api::Mutex;
+use spin::lock_api::{Mutex, RwLock};
 
 #[derive(Debug)]
 pub struct SmartPtrInner<T: ?Sized> {
@@ -47,6 +47,19 @@ impl<T> SmartPtr<T> {
     }
 }
 
+impl<T: ?Sized> SmartPtr<T> {
+    #[inline]
+    pub fn inner(&self) -> *const SmartPtrInner<T> {
+        self.ptr.as_ptr()
+    }
+
+    /// THIS DOES NOT INCREMENT THE REF COUNT!!!
+    pub unsafe fn from_inner(inner: *const SmartPtrInner<T>) -> Self {
+        let ptr = unsafe { NonNull::new_unchecked(inner as *mut _) };
+        Self { ptr }
+    }
+}
+
 impl<T: ?Sized> Deref for SmartPtr<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
@@ -79,6 +92,44 @@ impl<T: ?Sized + Debug> Debug for SmartPtr<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let inner = unsafe { self.ptr.as_ref() };
         f.debug_tuple("SmartPtr").field(&&inner.data).finish()
+    }
+}
+
+#[derive(Debug)]
+pub struct SmartPtrDeref<'a, T: ?Sized, U: ?Sized> {
+    _ptr: SmartPtr<T>,
+    val: &'a U,
+}
+
+impl<'a, T: ?Sized, U: ?Sized> SmartPtrDeref<'a, T, U> {
+    pub fn new<F>(ptr: SmartPtr<T>, c: F) -> Self
+    where
+        F: FnOnce(&'a T) -> &'a U,
+        T: 'a,
+        U: 'a,
+    {
+        Self::try_new::<_, !>(ptr, |v| Ok(c(v))).into_ok()
+    }
+
+    pub fn try_new<F, E>(ptr: SmartPtr<T>, c: F) -> Result<Self, E>
+    where
+        F: FnOnce(&'a T) -> Result<&'a U, E>,
+        T: 'a,
+        U: 'a,
+    {
+        let r: &T = &ptr;
+        // Safety: this extend the lifetime to 'a and it's safe to do so because the ref will be valid until the `SmartPtr` is dropped
+        // and it's dropped at the same time as the retuned struct and &'a is valid until the returned struct is dropped.
+        let r = unsafe { mem::transmute::<_, &'a T>(r) };
+        let val = c(r)?;
+        Ok(Self { _ptr: ptr, val })
+    }
+}
+
+impl<'a, T: ?Sized, U: ?Sized> Deref for SmartPtrDeref<'a, T, U> {
+    type Target = U;
+    fn deref(&self) -> &Self::Target {
+        self.val
     }
 }
 
@@ -317,5 +368,54 @@ impl<T, const N: usize> SmartBuff<T> for SmartPtrSizedBuff<T, N> {
 impl<T, const N: usize> Drop for SmartPtrSizedBuff<T, N> {
     fn drop(&mut self) {
         panic!("SmartPtrSizedBuff should be dropped using dealloc method")
+    }
+}
+
+#[derive(Debug)]
+pub struct SmartPtrResizableBuff<T, const N: usize = 16> {
+    data: RwLock<Vec<SmartPtrSizedBuff<T, N>>>,
+}
+
+impl<T, const N: usize> SmartPtrResizableBuff<T, N> {
+    pub const fn new() -> Self {
+        let data = RwLock::new(Vec::new());
+        Self { data }
+    }
+
+    pub fn insert(&self, val: T) -> SmartPtr<T> {
+        let mut val = val;
+        let data = self.data.read();
+        let r = self.try_insert(&data, val);
+        match r {
+            Ok(r) => return r,
+            Err(v) => val = v,
+        }
+        drop(data);
+        let mut data = self.data.write();
+        let r = self.try_insert(&data, val);
+        match r {
+            Ok(r) => return r,
+            Err(v) => val = v,
+        }
+        let buff = SmartPtrSizedBuff::new(true);
+        let r = buff
+            .insert(val)
+            .unwrap_or_else(|_| panic!("Buff should not be full"));
+        data.push(buff);
+        r.1
+    }
+
+    fn try_insert(&self, data: &[SmartPtrSizedBuff<T, N>], mut val: T) -> Result<SmartPtr<T>, T> {
+        for buff in data {
+            let r = buff.insert(val);
+            if let Ok(r) = r {
+                return Ok(r.1);
+            } else if let Err(v) = r {
+                val = v;
+            } else {
+                unreachable!()
+            }
+        }
+        Err(val)
     }
 }

@@ -131,11 +131,6 @@ impl Device {
         Ok(())
     }
 
-    #[inline]
-    pub fn controller_infos(&self) -> &IndentifyControllerData {
-        self.controller_infos.get().unwrap()
-    }
-
     pub fn identify_namespace_list(&self) -> Result<Vec<u32>, Error> {
         let buff: Dma<[u32; 1024]> = unsafe { Dma::new()? };
         let cmd = Command::identify_namespace_list(buff.phys());

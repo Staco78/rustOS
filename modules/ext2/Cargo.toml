@@ -10,3 +10,4 @@ kernel = { path = "../../kernel" }
 log = { workspace = true }
 spin = "0.9.4"
 static_assertions = "1.1.0"
+hashbrown = "0.13.2"

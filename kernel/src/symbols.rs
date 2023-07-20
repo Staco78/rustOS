@@ -7,7 +7,8 @@ use crate::fs;
 static mut SYMBOLS: BTreeMap<String, usize> = BTreeMap::new();
 
 pub fn init() {
-    let file = fs::get_node("/initrd/ksymbols").expect("ksymbols not found");
+    let node = fs::get_node("/initrd/ksymbols").expect("ksymbols not found");
+    let file = node.as_file().expect("Not a file");
     let symbols = unsafe { &mut SYMBOLS };
     let buff = file.read_to_end_vec(0).unwrap();
     let mut off = 0;

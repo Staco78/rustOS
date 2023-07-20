@@ -1,41 +1,34 @@
-use core::mem::MaybeUninit;
-
 use alloc::{
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
 use kernel::{
+    create_fs_node,
     error::Error,
-    fs::node::{FsNode, FsNodeRef},
+    fs::node::{Directory, File, FsNode, FsNodeInfos, FsNodeRef},
+    utils::buffer::Buffer,
 };
 
-use crate::{filesystem::FileSystem, structs::Inode};
+use crate::{filesystem::FileSystem, structs::InodeRef};
 
 #[derive(Debug)]
-pub struct FileNode {
-    fs: Arc<FileSystem>,
-    inode: Inode,
+pub struct FileNode<'a> {
+    fs: Arc<FileSystem<'a>>,
+    inode: InodeRef,
 }
 
-impl FileNode {
+impl<'a> FileNode<'a> {
     #[inline(always)]
-    pub fn new(fs: Arc<FileSystem>, inode: Inode) -> Self {
-        Self { fs, inode }
+    pub fn new(fs: Arc<FileSystem<'a>>, inode: InodeRef) -> FsNode<Self> {
+        let size = inode.size();
+        let file = Self { fs, inode };
+        create_fs_node!(file, FsNodeInfos { size }, file: dyn File)
     }
 }
 
-impl FsNode for FileNode {
-    fn size(&self) -> Result<usize, Error> {
-        let size = self.inode.size_lower as usize | (self.inode.size_upper as usize >> 32);
-        Ok(size)
-    }
-
-    fn read<'a>(
-        &self,
-        offset: usize,
-        buff: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Error> {
+unsafe impl<'a> File for FileNode<'a> {
+    fn read(&self, offset: usize, buff: &mut Buffer) -> Result<usize, Error> {
         let block_size = self.fs.superblock.block_size();
         let size = buff.len();
 
@@ -47,41 +40,43 @@ impl FsNode for FileNode {
         let mut offset = 0;
         for block_idx in start_block..=end_block {
             if block_idx == start_block {
-                let buff = &mut buff[start_block_off..block_size.min(size)];
-                let read =
-                    self.fs
-                        .read_inode_block(&self.inode, block_idx, buff, start_block_off)?;
-                offset += read.len(); // Should be the same as `block_size - start_block_off`.
+                let buff = buff.slice_mut(start_block_off..block_size.min(size));
+                self.fs
+                    .read_inode_block(&self.inode, block_idx, buff, start_block_off)?;
+                offset += buff.len(); // Should be the same as `block_size.min(size) - start_block_off`.
             } else if block_idx == end_block {
-                let buff = &mut buff[offset..offset + end_block_off];
+                let buff = buff.slice_mut(offset..offset + end_block_off);
                 self.fs.read_inode_block(&self.inode, block_idx, buff, 0)?;
+                offset += buff.len();
             } else {
                 let old_offset = offset;
                 offset += block_size;
-                let buff = &mut buff[old_offset..offset];
+                let buff = buff.slice_mut(old_offset..offset);
                 self.fs.read_inode_block(&self.inode, block_idx, buff, 0)?;
             }
         }
 
-        let buff = unsafe { MaybeUninit::slice_assume_init_mut(buff) };
-        Ok(buff)
+        debug_assert_eq!(offset, buff.len());
+        Ok(buff.len())
     }
 }
 
 #[derive(Debug)]
-pub struct DirNode {
-    fs: Arc<FileSystem>,
-    inode: Inode,
+pub struct DirNode<'a> {
+    fs: Arc<FileSystem<'a>>,
+    inode: InodeRef,
 }
 
-impl DirNode {
+impl<'a> DirNode<'a> {
     #[inline(always)]
-    pub fn new(fs: Arc<FileSystem>, inode: Inode) -> Self {
-        Self { fs, inode }
+    pub fn new(fs: Arc<FileSystem<'a>>, inode: InodeRef) -> FsNode<Self> {
+        let size = inode.size();
+        let dir = Self { fs, inode };
+        create_fs_node!(dir, FsNodeInfos { size }, directory: dyn Directory)
     }
 }
 
-impl FsNode for DirNode {
+unsafe impl<'a> Directory for DirNode<'a> {
     fn find(&self, name: &str) -> Result<Option<FsNodeRef>, Error> {
         let mut file = None;
         self.fs.read_dir(&self.inode, |entry| {

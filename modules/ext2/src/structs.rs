@@ -2,6 +2,7 @@
 
 use core::{ffi::CStr, mem, slice};
 
+use kernel::utils::smart_ptr::SmartPtr;
 use static_assertions::assert_eq_size;
 
 #[repr(C)]
@@ -140,7 +141,7 @@ pub struct BlockGroupDescriptor {
 assert_eq_size!(BlockGroupDescriptor, [u8; 32]);
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Inode {
     pub type_and_permissions: u16,
     pub uid: u16,
@@ -165,7 +166,15 @@ pub struct Inode {
     pub os_value_2: [u8; 12],
 }
 
+impl Inode {
+    pub fn size(&self) -> usize {
+        self.size_lower as usize | (self.size_upper as usize >> u32::BITS)
+    }
+}
+
 assert_eq_size!(Inode, [u8; 128]);
+
+pub type InodeRef = SmartPtr<Inode>;
 
 #[derive(Debug)]
 pub enum Type {

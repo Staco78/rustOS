@@ -6,6 +6,7 @@
 #![feature(int_roundings)]
 #![feature(new_uninit)]
 #![feature(assert_matches)]
+#![feature(ptr_metadata)]
 
 extern crate alloc;
 
@@ -14,6 +15,7 @@ mod driver;
 mod filesystem;
 mod nodes;
 mod structs;
+mod icache;
 
 use driver::DRIVER;
 use kernel::{error::Error, fs};

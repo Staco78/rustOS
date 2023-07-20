@@ -1,34 +1,40 @@
 use core::mem::{size_of, MaybeUninit};
 
-use alloc::vec::Vec;
+use alloc::boxed::Box;
 
-use crate::error::Error;
+use crate::{
+    error::{Error, FsError},
+    utils::buffer::Buffer,
+};
 
-use super::node::FsNode;
+use super::node::File;
 
-/// Safety: `T` should be safe to transmute from [[u8]].
-pub unsafe fn read_struct<T>(node: &dyn FsNode, offset: usize) -> Result<T, Error> {
-    let mut buff = MaybeUninit::<T>::uninit();
-    node.read(offset, buff.as_bytes_mut())?;
-    Ok(buff.assume_init())
+/// Safety: `T` should be safe to transmute from [\[u8\]].
+pub unsafe fn read_struct<T>(node: &dyn File, offset: usize) -> Result<T, Error> {
+    let mut data = MaybeUninit::<T>::uninit();
+    let buff = Buffer::from_slice_mut(data.as_bytes_mut());
+    let bytes_read = node.read(offset, buff)?;
+    if bytes_read < size_of::<T>() {
+        Err(Error::IoError)
+    } else {
+        Ok(data.assume_init())
+    }
 }
 
-/// Safety: `T` should be safe to transmute from [[u8]].
-pub unsafe fn read_struct_vec<T>(
-    node: &dyn FsNode,
+/// Safety: `T` should be safe to transmute from [\[u8\]].
+pub unsafe fn read_slice_boxed<T>(
+    node: &dyn File,
     offset: usize,
     count: usize,
-) -> Result<Vec<T>, Error> {
-    let vec = node.read_vec(offset, size_of::<T>() * count)?;
-    let (ptr, length, capacity) = vec.into_raw_parts();
-
-    debug_assert!(length == capacity);
-    debug_assert!(length % size_of::<T>() == 0);
-
-    let ptr = ptr as *mut T;
-    let length = length / size_of::<T>();
-    let capacity = capacity / size_of::<T>();
-
-    let vec = Vec::from_raw_parts(ptr, length, capacity);
-    Ok(vec)
+) -> Result<Box<[T]>, Error> {
+    let mut data = Box::new_uninit_slice(count);
+    let bytes = MaybeUninit::slice_as_bytes_mut(&mut data);
+    let buff = Buffer::from_slice_mut(bytes);
+    let r = node.read(offset, buff)?;
+    if r == buff.len() {
+        let data = unsafe { data.assume_init() };
+        Ok(data)
+    } else {
+        Err(Error::Fs(FsError::EndOfFile))
+    }
 }

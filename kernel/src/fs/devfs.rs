@@ -3,17 +3,23 @@ use hashbrown::HashMap;
 use log::error;
 use spin::{lazy::Lazy, lock_api::RwLock};
 
-use crate::{error::Error, utils::smart_ptr::SmartPtr};
+use crate::{error::Error, fs::node::FsNodeInfos, create_fs_node, utils::smart_ptr::SmartPtr};
 
 use super::{
     mount_node,
-    node::{FsNode, FsNodeRef},
+    node::{Directory, FsNode, FsNodeRef},
 };
 
-static DEVFS: Lazy<SmartPtr<DevFs>> = Lazy::new(|| {
+static DEVFS: Lazy<SmartPtr<FsNode<DevFs>>> = Lazy::new(|| {
     let dev = DevFs::new();
-    let ptr = SmartPtr::new_boxed(dev);
-    let r = mount_node("/dev", ptr.clone());
+    let node = create_fs_node!(
+        dev,
+        FsNodeInfos { size: dev.size() },
+        directory: dyn Directory
+    );
+    let ptr = SmartPtr::new_boxed(node);
+    let node = FsNodeRef::new(SmartPtr::clone(&ptr));
+    let r = mount_node("/dev", node);
     if let Err(e) = r {
         error!("Failed to mount devfs: {}", e);
     }
@@ -31,9 +37,14 @@ impl DevFs {
             nodes: RwLock::new(HashMap::new()),
         }
     }
+
+    fn size(&self) -> usize {
+        let nodes = self.nodes.read();
+        nodes.len()
+    }
 }
 
-impl FsNode for DevFs {
+unsafe impl Directory for DevFs {
     fn find(&self, name: &str) -> Result<Option<FsNodeRef>, Error> {
         let nodes = self.nodes.read();
         Ok(nodes.get(name).cloned())
@@ -43,11 +54,6 @@ impl FsNode for DevFs {
         let nodes = self.nodes.read();
         let keys = nodes.keys().cloned().collect();
         Ok(keys)
-    }
-
-    fn size(&self) -> Result<usize, Error> {
-        let nodes = self.nodes.read();
-        Ok(nodes.len())
     }
 }
 

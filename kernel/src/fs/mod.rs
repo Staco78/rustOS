@@ -6,6 +6,7 @@ mod initrd;
 pub mod path;
 mod utils;
 mod vfs;
+pub mod block;
 
 pub use drivers::*;
 pub use utils::*;

@@ -29,13 +29,10 @@ pub fn init() -> Result<(), Error> {
 static DEVICES: RwLock<Vec<Arc<Device>>> = RwLock::new(Vec::new());
 
 fn device_handler(device: &PciDevice) {
-    let device = Device::new(device.clone());
+    let device = Arc::new(Device::new(device.clone()));
     let mut devices = DEVICES.write();
-    devices.push(Arc::new(device));
+    devices.push(Arc::clone(&device));
     drop(devices);
-    let devices = DEVICES.read();
-    let device = devices.last().unwrap();
-
     device.init().unwrap();
 }
 
