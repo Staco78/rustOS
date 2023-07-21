@@ -1,6 +1,5 @@
 #![no_main]
 #![no_std]
-#![feature(abi_efiapi)]
 #![feature(panic_info_message)]
 #![feature(strict_provenance)]
 

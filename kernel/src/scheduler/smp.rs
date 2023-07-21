@@ -119,7 +119,7 @@ fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
 
     unsafe { psci::cpu_on(id, entry, ptr.addr() as u64) };
 
-    while start_infos.has_started.load(Ordering::Acquire) != 1 {
+    while start_infos.has_started.load(Ordering::Relaxed) != 1 {
         core::hint::spin_loop();
     }
 }

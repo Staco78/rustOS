@@ -177,7 +177,7 @@ pub trait SmartBuff<T> {
         let inner: &SmartPtrInner<T> = unsafe {
             // Safety: we can get a mutable reference because we checked that there is
             // no other reference anywhere above.
-            #[allow(clippy::cast_ref_to_mut)]
+            #[allow(cast_ref_to_mut)]
             let ptr: &mut _ = &mut *(&inner.data as *const _ as *mut MaybeUninit<T>);
             MaybeUninit::write(ptr, value);
 

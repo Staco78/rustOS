@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(default_alloc_error_handler)]
 #![feature(int_roundings)]
 #![feature(let_chains)]
 

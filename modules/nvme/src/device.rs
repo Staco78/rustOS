@@ -88,7 +88,7 @@ impl Device {
                 })
             });
             let msix_capability = msix_capability.expect("Device doesn't support MSI-X interrupts");
-            #[allow(clippy::cast_ref_to_mut)]
+            #[allow(cast_ref_to_mut)]
             unsafe {
                 (*(msix_capability as *const _ as *mut MsixCapability)).enable()
             };

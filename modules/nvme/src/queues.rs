@@ -394,7 +394,7 @@ impl<Q: QueueMarker> QueueId<Q> {
 
 impl<Q: QueueMarker> Clone for QueueId<Q> {
     fn clone(&self) -> Self {
-        Self(self.0, PhantomData)
+        *self
     }
 }
 impl<Q: QueueMarker> Copy for QueueId<Q> {}
@@ -406,7 +406,7 @@ impl<Q: QueueMarker> PartialEq for QueueId<Q> {
 impl<Q: QueueMarker> Eq for QueueId<Q> {}
 impl<Q: QueueMarker> PartialOrd for QueueId<Q> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 impl<Q: QueueMarker> Ord for QueueId<Q> {

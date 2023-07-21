@@ -76,15 +76,16 @@ impl<K: MemoryKind> Address<K> {
 
 impl PhysicalAddress {
     #[inline]
+    #[allow(clippy::absurd_extreme_comparisons)]
     /// Transform the `self` `PhysicalAddress` to a `VirtualAddress` by adding a constant.
     ///
     /// `self` must be in the first 512 GB.
     pub const fn to_virt(self) -> VirtualAddress {
-        assert!(self >= LOW_ADDR_SPACE_RANGE.start && self <= LOW_ADDR_SPACE_RANGE.end);
+        assert!(self.0 >= LOW_ADDR_SPACE_RANGE.start.0 && self.0 <= LOW_ADDR_SPACE_RANGE.end.0);
         let addr = VirtualAddress::new(self.addr() + PHYSICAL_LINEAR_MAPPING_RANGE.start.addr());
         debug_assert!(
-            addr >= PHYSICAL_LINEAR_MAPPING_RANGE.start
-                && addr <= PHYSICAL_LINEAR_MAPPING_RANGE.end
+            addr.0 >= PHYSICAL_LINEAR_MAPPING_RANGE.start.0
+                && addr.0 <= PHYSICAL_LINEAR_MAPPING_RANGE.end.0
         );
         addr
     }
@@ -129,7 +130,7 @@ impl VirtualAddress {
 impl<K: MemoryKind> Clone for Address<K> {
     #[inline(always)]
     fn clone(&self) -> Self {
-        Self(self.0, PhantomData)
+        *self
     }
 }
 impl<K: MemoryKind> Copy for Address<K> {}
@@ -222,7 +223,8 @@ impl<K: MemoryKind, K2: MemoryKind> PartialEq<Address<K>> for Address<K2> {
         self.0.eq(&other.0)
     }
 }
-impl<K: MemoryKind, K2: MemoryKind> const PartialOrd<Address<K>> for Address<K2> {
+
+impl<K: MemoryKind, K2: MemoryKind> PartialOrd<Address<K>> for Address<K2> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Address<K>) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(&other.0)

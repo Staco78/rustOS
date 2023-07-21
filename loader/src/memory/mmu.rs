@@ -3,7 +3,6 @@ use core::slice;
 use crate::{read_cpu_reg, write_cpu_reg};
 use anyhow::{anyhow, Result};
 use log::trace;
-use modular_bitfield::prelude::*;
 use uefi::{
     prelude::BootServices,
     table::boot::{AllocateType, MemoryType},
@@ -13,113 +12,120 @@ use super::{PhysicalAddress, VirtualAddress};
 
 include!(concat!(env!("OUT_DIR"), "/mmu_pages.rs"));
 
-#[derive(BitfieldSpecifier)]
-#[bits = 2]
-enum Cacheability {
-    NonCacheable = 0, // Normal memory, Non-cacheable
-    WbWa = 1,         // Normal memory, Write-Back Write-Allocate Cacheable
-    Wt = 2,           // Normal memory, Write-Through Cacheable
-    WbNoWa = 3,       // Normal memory, Write-Back no Write-Allocate Cacheable
-}
+mod structs {
+    #![allow(dead_code)]
 
-#[derive(BitfieldSpecifier)]
-#[bits = 2]
-enum Shareability {
-    NonShareable = 0,
-    OuterShareable = 2,
-    InnerShareable = 3,
-}
+    use modular_bitfield::prelude::*;
 
-#[bitfield(bits = 64)]
-struct TcrRegister {
-    t0sz: B6, // size of low memory region
-    #[skip]
-    reserved: B1,
-    epd0: B1,            // TTBR0 disabled
-    irgn0: Cacheability, // inner cacheability
-    orgn0: Cacheability, // outer cacheability
-    sh0: Shareability,
-    tg0: B2,             // Granule size: 0b00: 4KB 0b01: 64KB 0b10: 16KB
-    t1sz: B6,            // size of high memory region
-    a1: B1,              // 0: ASID from TTBR0 1: ASID from TTBR1
-    epd1: B1,            // TTBR1 disabled
-    irgn1: Cacheability, // inner cacheability
-    orgn1: Cacheability, // outer cacheability
-    sh1: Shareability,
-    tg1: B2, // Granule size: 0b00: 16KB 0b10: 4KB 0b11: 64KB
-    ips: B3, // Intermediate physical address size (0b101 for 48 bits)
-    #[skip]
-    reserved2: B1,
-    asid_size: B1, // 0: 8 bit 1: 16 bit
-    tbi0: B1,      // 0: Top byte used in address calculation 1: top byte ignored
-    tbi1: B1,      // same
-    #[skip]
-    reserved3: B25,
-}
+    #[derive(BitfieldSpecifier)]
+    #[bits = 2]
+    pub enum Cacheability {
+        NonCacheable = 0, // Normal memory, Non-cacheable
+        WbWa = 1,         // Normal memory, Write-Back Write-Allocate Cacheable
+        Wt = 2,           // Normal memory, Write-Through Cacheable
+        WbNoWa = 3,       // Normal memory, Write-Back no Write-Allocate Cacheable
+    }
 
-#[bitfield(bits = 12)]
-#[derive(Clone, Copy, BitfieldSpecifier)]
-struct UpperDescriptorAttributes {
-    contigous: bool,
-    #[allow(non_snake_case)]
-    PXN: bool, // execute never at EL1
-    #[allow(non_snake_case)]
-    UXN: bool, // execute never at EL0
-    #[skip]
-    reserved: B4,
-    #[skip]
-    ignored: B5,
-}
+    #[derive(BitfieldSpecifier)]
+    #[bits = 2]
+    pub enum Shareability {
+        NonShareable = 0,
+        OuterShareable = 2,
+        InnerShareable = 3,
+    }
 
-#[bitfield(bits = 10)]
-#[derive(Clone, Copy, BitfieldSpecifier)]
-struct LowerDescriptorAttributes {
-    attr_index: B3, // MAIR index
-    #[allow(non_snake_case)]
-    non_secure: B1,
-    #[allow(non_snake_case)]
-    EL0_access: B1, // 0: no access in EL0 1: same access in EL0 and EL1 (defined by read only bit)
-    readonly: B1,
-    shareability: B2, // 00: non shareable 01: reserved 10: outer shareable 11: inner shareable
-    access_flag: B1,
-    non_global: B1,
-}
+    #[bitfield(bits = 64)]
+    pub struct TcrRegister {
+        pub t0sz: B6, // size of low memory region
+        #[skip]
+        reserved: B1,
+        pub epd0: B1,            // TTBR0 disabled
+        pub irgn0: Cacheability, // inner cacheability
+        pub orgn0: Cacheability, // outer cacheability
+        pub sh0: Shareability,
+        pub tg0: B2,             // Granule size: 0b00: 4KB 0b01: 64KB 0b10: 16KB
+        pub t1sz: B6,            // size of high memory region
+        pub a1: B1,              // 0: ASID from TTBR0 1: ASID from TTBR1
+        pub epd1: B1,            // TTBR1 disabled
+        pub irgn1: Cacheability, // inner cacheability
+        pub orgn1: Cacheability, // outer cacheability
+        pub sh1: Shareability,
+        pub tg1: B2, // Granule size: 0b00: 16KB 0b10: 4KB 0b11: 64KB
+        pub ips: B3, // Intermediate physical address size (0b101 for 48 bits)
+        #[skip]
+        reserved2: B1,
+        pub asid_size: B1, // 0: 8 bit 1: 16 bit
+        pub tbi0: B1,      // 0: Top byte used in address calculation 1: top byte ignored
+        pub tbi1: B1,      // same
+        #[skip]
+        reserved3: B25,
+    }
 
-#[bitfield(bits = 64)]
-#[derive(Clone, Copy)]
-struct BlockDescriptor {
-    present: bool,
-    block_or_table: B1, // should be 0 for block
-    lower_attributes: LowerDescriptorAttributes,
-    address: B36,
-    #[skip]
-    reserved: B4,
-    upper_attributes: UpperDescriptorAttributes,
-}
+    #[bitfield(bits = 12)]
+    #[derive(Clone, Copy, BitfieldSpecifier)]
+    pub struct UpperDescriptorAttributes {
+        pub contigous: bool,
+        #[allow(non_snake_case)]
+        pub PXN: bool, // execute never at EL1
+        #[allow(non_snake_case)]
+        pub UXN: bool, // execute never at EL0
+        #[skip]
+        reserved: B4,
+        #[skip]
+        ignored: B5,
+    }
 
-#[bitfield(bits = 64)]
-#[derive(Clone, Copy)]
-struct TableDescriptor {
-    present: bool,
-    block_or_table: B1, // should be 1
-    #[skip]
-    ignored: B10,
-    address: B36,
-    #[skip]
-    reserved: B4,
-    #[skip]
-    ignored2: B7,
+    #[bitfield(bits = 10)]
+    #[derive(Clone, Copy, BitfieldSpecifier)]
+    pub struct LowerDescriptorAttributes {
+        pub attr_index: B3, // MAIR index
+        #[allow(non_snake_case)]
+        non_secure: B1,
+        #[allow(non_snake_case)]
+        pub EL0_access: B1, // 0: no access in EL0 1: same access in EL0 and EL1 (defined by read only bit)
+        pub readonly: B1,
+        pub shareability: B2, // 00: non shareable 01: reserved 10: outer shareable 11: inner shareable
+        pub access_flag: B1,
+        pub non_global: B1,
+    }
 
-    // overrides
-    #[allow(non_snake_case)]
-    PXN: B1,
-    #[allow(non_snake_case)]
-    UXN: B1,
-    #[allow(non_snake_case)]
-    EL0_access: B1,
-    readonly: B1,
-    non_secure: B1,
+    #[bitfield(bits = 64)]
+    #[derive(Clone, Copy)]
+    pub struct BlockDescriptor {
+        pub present: bool,
+        pub block_or_table: B1, // should be 0 for block
+        pub lower_attributes: LowerDescriptorAttributes,
+        pub address: B36,
+        #[skip]
+        reserved: B4,
+        pub upper_attributes: UpperDescriptorAttributes,
+    }
+
+    #[bitfield(bits = 64)]
+    #[derive(Clone, Copy)]
+    pub struct TableDescriptor {
+        pub present: bool,
+        pub block_or_table: B1, // should be 1
+        #[skip]
+        ignored: B10,
+        pub address: B36,
+        #[skip]
+        reserved: B4,
+        #[skip]
+        ignored2: B7,
+
+        // overrides
+        #[allow(non_snake_case)]
+        pub PXN: B1,
+        #[allow(non_snake_case)]
+        pub UXN: B1,
+        #[allow(non_snake_case)]
+        pub EL0_access: B1,
+        pub readonly: B1,
+        pub non_secure: B1,
+    }
 }
+use structs::*;
 
 #[derive(Clone, Copy)]
 union TableEntry {

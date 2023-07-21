@@ -8,71 +8,77 @@ use super::{
     PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
 use core::{arch::asm, fmt::Debug, mem::discriminant, ops::Range, ptr, slice};
-use modular_bitfield::prelude::*;
 
-#[bitfield(bits = 12)]
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
-struct UpperDescriptorAttributes {
-    contigous: bool,
-    #[allow(non_snake_case)]
-    PXN: bool, // execute never at EL1
-    #[allow(non_snake_case)]
-    UXN: bool, // execute never at EL0
-    #[skip]
-    reserved: B4,
-    #[skip]
-    ignored: B5,
+mod structs {
+    #![allow(dead_code)]
+
+    use modular_bitfield::prelude::*;
+
+    #[bitfield(bits = 12)]
+    #[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+    pub struct UpperDescriptorAttributes {
+        contigous: bool,
+        #[allow(non_snake_case)]
+        pub PXN: bool, // execute never at EL1
+        #[allow(non_snake_case)]
+        pub UXN: bool, // execute never at EL0
+        #[skip]
+        reserved: B4,
+        #[skip]
+        ignored: B5,
+    }
+
+    #[bitfield(bits = 10)]
+    #[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+    pub struct LowerDescriptorAttributes {
+        pub attr_index: B3, // MAIR index
+        #[allow(non_snake_case)]
+        pub non_secure: B1,
+        #[allow(non_snake_case)]
+        pub EL0_access: bool, // 0: no access in EL0 1: same access in EL0 and EL1 (defined by read only bit)
+        pub readonly: bool,
+        pub shareability: B2, // 00: non shareable 01: reserved 10: outer shareable 11: inner shareable
+        pub access_flag: B1,
+        pub non_global: B1,
+    }
+
+    #[bitfield(bits = 64)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct BlockDescriptor {
+        pub present: bool,
+        pub block_or_table: B1, // should be 0 for block
+        pub lower_attributes: LowerDescriptorAttributes,
+        pub address: B36,
+        #[skip]
+        reserved: B4,
+        pub upper_attributes: UpperDescriptorAttributes,
+    }
+
+    #[bitfield(bits = 64)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct TableDescriptor {
+        pub present: bool,
+        pub block_or_table: B1, // should be 1
+        #[skip]
+        ignored: B10,
+        pub address: B36,
+        #[skip]
+        reserved: B4,
+        #[skip]
+        ignored2: B7,
+
+        // overrides
+        #[allow(non_snake_case)]
+        pub PXN: B1,
+        #[allow(non_snake_case)]
+        pub UXN: B1,
+        #[allow(non_snake_case)]
+        pub EL0_access: B1,
+        pub readonly: B1,
+        pub non_secure: B1,
+    }
 }
-
-#[bitfield(bits = 10)]
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
-struct LowerDescriptorAttributes {
-    attr_index: B3, // MAIR index
-    #[allow(non_snake_case)]
-    non_secure: B1,
-    #[allow(non_snake_case)]
-    EL0_access: bool, // 0: no access in EL0 1: same access in EL0 and EL1 (defined by read only bit)
-    readonly: bool,
-    shareability: B2, // 00: non shareable 01: reserved 10: outer shareable 11: inner shareable
-    access_flag: B1,
-    non_global: B1,
-}
-
-#[bitfield(bits = 64)]
-#[derive(Debug, Clone, Copy)]
-struct BlockDescriptor {
-    present: bool,
-    block_or_table: B1, // should be 0 for block
-    lower_attributes: LowerDescriptorAttributes,
-    address: B36,
-    #[skip]
-    reserved: B4,
-    upper_attributes: UpperDescriptorAttributes,
-}
-
-#[bitfield(bits = 64)]
-#[derive(Debug, Clone, Copy)]
-struct TableDescriptor {
-    present: bool,
-    block_or_table: B1, // should be 1
-    #[skip]
-    ignored: B10,
-    address: B36,
-    #[skip]
-    reserved: B4,
-    #[skip]
-    ignored2: B7,
-
-    // overrides
-    #[allow(non_snake_case)]
-    PXN: B1,
-    #[allow(non_snake_case)]
-    UXN: B1,
-    #[allow(non_snake_case)]
-    EL0_access: B1,
-    readonly: B1,
-    non_secure: B1,
-}
+use structs::*;
 
 #[derive(Clone, Copy)]
 #[allow(unused)]

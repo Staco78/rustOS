@@ -60,16 +60,9 @@ static DUMMY_CPU: Cpu = Cpu {
 
 pub static SCHEDULER: Scheduler = Scheduler::new();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SchedulerState {
-    Initing,
-    Started,
-}
-
 #[derive(Debug)]
 pub struct Scheduler {
     cpus: SyncUnsafeCell<Vec<Cpu>>,
-    state: AtomicCell<SchedulerState>,
     kernel_process: SyncUnsafeCell<Option<ProcessRef>>,
 
     threads_to_destroy: NoIrqMutex<Vec<ThreadRef>>,
@@ -86,7 +79,6 @@ impl Scheduler {
     const fn new() -> Self {
         Self {
             cpus: SyncUnsafeCell::new(Vec::new()),
-            state: AtomicCell::new(SchedulerState::Initing),
             kernel_process: SyncUnsafeCell::new(None),
 
             threads_to_destroy: NoIrqMutex::new(Vec::new()),
@@ -101,7 +93,6 @@ impl Scheduler {
     pub fn init(&self) {
         let kernel_process_ = unsafe { &mut *self.kernel_process.get() };
 
-        assert!(self.state.load() == SchedulerState::Initing);
         debug_assert!(kernel_process_.is_none());
 
         let kernel_addr_space = AddrSpaceLock::Ref(vmm::get_kernel_addr_space());
@@ -148,7 +139,6 @@ impl Scheduler {
     }
 
     pub fn register_cpu(&self, id: u32, is_main_cpu: bool) {
-        assert!(self.state.load() == SchedulerState::Initing);
         for cpu in self.cpus() {
             assert!(cpu.id != id);
             assert!(!(is_main_cpu && cpu.is_main_cpu));
@@ -160,8 +150,6 @@ impl Scheduler {
 
     // call this on each core
     pub fn start(&self, entry: ThreadEntry) -> ! {
-        assert!(self.state.load() == SchedulerState::Initing);
-
         // use a scope here bc rust doesn't drop variables when calling a never return function
         let thread_to_run = {
             let cpu = self
@@ -181,7 +169,6 @@ impl Scheduler {
             self.add_thread(thread.clone());
 
             timer::init_core();
-            self.state.store(SchedulerState::Started);
 
             thread.atomic_state().store(ThreadState::Running);
             cpu.set_current_thread(thread.clone());
