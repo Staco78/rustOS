@@ -1,7 +1,7 @@
 use core::{
     fmt::Debug,
     mem::size_of,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering}, time::Duration,
 };
 
 use crossbeam_utils::atomic::AtomicCell;
@@ -41,8 +41,8 @@ pub enum ThreadState {
     Running,
     Exited,
 
-    /// Store the time in ns from uptime where we will wake up the thread.
-    Waiting(u64),
+    /// Store the duration from uptime where we will wake up the thread.
+    Waiting(Duration),
 
     Blocked,
 }

@@ -3,6 +3,7 @@ use core::{
     cell::SyncUnsafeCell,
     mem::MaybeUninit,
     sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
 };
 
 use alloc::{collections::VecDeque, vec::Vec};
@@ -43,7 +44,7 @@ pub mod thread;
 pub use funcs::*;
 pub use smp::register_cpus;
 
-const TIMESLICE_NS: u64 = 100_000_000; // 100 ms
+const TIMESLICE: Duration = Duration::from_millis(100);
 
 extern "C" {
     fn exception_exit(frame: *mut InterruptFrame) -> !;
@@ -261,21 +262,21 @@ impl Scheduler {
 
         match (runnable_threads_count == 0, lower_waiting_time) {
             (true, None) => {} // don't set the timer
-            (true, Some(ns)) => {
-                timer::tick_at_ns(ns);
+            (true, Some(duration)) => {
+                timer::tick_at(duration);
             }
-            (false, None) => timer::tick_in_ns(TIMESLICE_NS),
-            (false, Some(ns)) => {
-                let uptime = timer::uptime_ns();
-                if uptime >= ns {
-                    timer::tick_in_ns(TIMESLICE_NS); // FIXME
+            (false, None) => timer::tick_in(TIMESLICE),
+            (false, Some(duration)) => {
+                let uptime = timer::uptime();
+                if uptime >= duration {
+                    timer::tick_in(TIMESLICE); // FIXME
                     return;
                 }
-                let remaining_time = ns - uptime;
-                if remaining_time < TIMESLICE_NS {
-                    timer::tick_at_ns(ns);
+                let remaining_time = duration - uptime;
+                if remaining_time < TIMESLICE {
+                    timer::tick_at(duration);
                 } else {
-                    timer::tick_in_ns(TIMESLICE_NS);
+                    timer::tick_in(TIMESLICE);
                 }
             }
         }
@@ -284,13 +285,13 @@ impl Scheduler {
     fn wake_up_waiting_threads(&self) {
         let mut runnable_threads = Cpu::current().threads().lock();
         let mut waiting_threads = self.waiting_threads().write();
-        let uptime = timer::uptime_ns();
+        let uptime = timer::uptime();
         while let Some(thread) = waiting_threads.front() {
             let wake_up_time = match thread.state() {
                 ThreadState::Waiting(time) => time,
                 _ => unreachable!(),
             };
-            if wake_up_time - 1000 > uptime {
+            if wake_up_time - Duration::from_micros(1) > uptime {
                 break;
             }
 
@@ -359,7 +360,7 @@ impl Scheduler {
 
             drop(threads_to_destroy); // unlock before going to sleep
 
-            sleep(1_000_000_000); // 1 s
+            sleep(Duration::from_secs(1));
         }
     }
 }

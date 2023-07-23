@@ -1,6 +1,6 @@
 use core::{
     mem,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering}, time::Duration,
 };
 
 use cortex_a::registers::{CNTFRQ_EL0, CNTPCT_EL0, CNTP_CTL_EL0, CNTP_CVAL_EL0, CNTP_TVAL_EL0};
@@ -50,22 +50,25 @@ fn handler(id: u32, frame: *mut InterruptFrame, _: usize) -> *mut InterruptFrame
     handler_ptr(id, frame, 0)
 }
 
-// set the timer to fire in ? ns
-pub fn tick_in_ns(ns: u64) {
-    trace!(target: "timer", "Tick in {ns} ns");
+// set the timer to fire in ?
+pub fn tick_in(duration: Duration) {
+    trace!(target: "timer", "Tick in {:?}", duration);
     CNTP_CTL_EL0.modify(CNTP_CTL_EL0::IMASK::CLEAR);
+    let ns = duration.as_nanos();
     let ticks = (ns as f64 / ns_per_tick()) as u64;
     CNTP_TVAL_EL0.set(ticks);
 }
 
-pub fn tick_at_ns(ns: u64) {
-    trace!(target: "timer", "Tick at {ns} ns");
+pub fn tick_at(time_point: Duration) {
+    trace!(target: "timer", "Tick at {:?}", time_point);
     CNTP_CTL_EL0.modify(CNTP_CTL_EL0::IMASK::CLEAR);
+    let ns = time_point.as_nanos();
     let ticks = (ns as f64 / ns_per_tick()) as u64;
     CNTP_CVAL_EL0.set(ticks);
 }
 
 #[inline]
-pub fn uptime_ns() -> u64 {
-    (CNTPCT_EL0.get() as f64 * ns_per_tick()) as u64
+pub fn uptime() -> Duration {
+    let ns = (CNTPCT_EL0.get() as f64 * ns_per_tick()) as u64;
+    Duration::from_nanos(ns)
 }

@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use log::trace;
 
 use crate::{scheduler::SCHEDULER, timer};
@@ -47,28 +49,28 @@ pub fn yield_now() {
     SCHEDULER.yield_now()
 }
 
-pub fn sleep(duration_ns: u64) {
+pub fn sleep(duration: Duration) {
     {
-        let time_point_ns = timer::uptime_ns() + duration_ns;
+        let time_point = timer::uptime() + duration;
         let mut threads = SCHEDULER.waiting_threads().write();
         let r = threads.binary_search_by(|e| {
             let time = match e.state() {
                 ThreadState::Waiting(time) => time,
                 _ => unreachable!(),
             };
-            time_point_ns.cmp(&time)
+            time_point.cmp(&time)
         });
         let current_thread = current_thread().clone();
         let id = current_thread.id();
         current_thread
             .atomic_state()
-            .store(ThreadState::Waiting(time_point_ns));
+            .store(ThreadState::Waiting(time_point));
         match r {
             Ok(i) => threads.insert(i, current_thread),
             Err(i) => threads.insert(i, current_thread),
         };
 
-        trace!(target: "scheduler", "Thread {} goes to sleep for {}ms", id, duration_ns / 1000000);
+        trace!(target: "scheduler", "Thread {} goes to sleep for {:?}", id, duration);
     }
 
     yield_now();
