@@ -54,7 +54,9 @@ impl log::Log for KernelLogger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
-            let module = if let Some(path) = record.file() && path.starts_with("modules/") {
+            let module = if let Some(path) = record.file()
+                && path.starts_with("modules/")
+            {
                 record
                     .module_path()
                     .and_then(|path| path.split("::").next())
@@ -62,17 +64,19 @@ impl log::Log for KernelLogger {
                 None
             };
 
-            if let Some(module) = module && MODULES_BLACKLIST.contains(&module) {
+            if let Some(module) = module
+                && MODULES_BLACKLIST.contains(&module)
+            {
                 return;
             }
 
             let output: &mut dyn Write = unsafe {
-                if OUTPUT.is_some() {
-                    OUTPUT.as_deref_mut().unwrap()
+                if (&*&raw const OUTPUT).is_some() {
+                    (&mut *&raw mut OUTPUT).as_deref_mut().unwrap()
                 } else {
                     cfg_if::cfg_if! {
                         if #[cfg(feature = "qemu_debug")] {
-                            let r = &mut QEMU_OUTPUT as &mut dyn Write;
+                            let r = &mut(*&raw mut  QEMU_OUTPUT) as &mut dyn Write;
                             write!(r, "(QEMU) ").unwrap();
                             r
                         } else {
@@ -82,7 +86,7 @@ impl log::Log for KernelLogger {
                 }
             };
 
-            let lock = if record.target() == "panic" {
+            let lock = if record.target() == "panic" && false {
                 None
             } else {
                 Some(self.lock.lock())
@@ -107,15 +111,18 @@ impl log::Log for KernelLogger {
 
             let target = record.target();
 
-            if let Some(path) = record.file() && path.starts_with("modules/")
+            if let Some(path) = record.file()
+                && path.starts_with("modules/")
             {
-                if let Some(module) = record.module_path().and_then(|path| path.split("::").next()) {
+                if let Some(module) = record
+                    .module_path()
+                    .and_then(|path| path.split("::").next())
+                {
                     write!(output, "{}: ", module).unwrap();
                 }
             }
             // don't show automatic target
-            else if !target.contains("::") && level != Level::Info && target != "panic"
-            {
+            else if !target.contains("::") && level != Level::Info && target != "panic" {
                 write!(output, "{}: ", target).unwrap();
             }
 
@@ -141,13 +148,13 @@ pub fn set_output(output: &'static mut dyn Write) {
 }
 
 pub fn puts(str: &str) {
-    if let Some(output) = unsafe { &mut OUTPUT } {
+    if let Some(output) = unsafe { &mut *&raw mut OUTPUT }.as_mut() {
         output.write_str(str).expect("Write failed");
     }
 }
 
 pub fn puts_fmt(args: fmt::Arguments) {
-    if let Some(output) = unsafe { &mut OUTPUT } {
+    if let Some(output) = unsafe { &mut *&raw mut OUTPUT }.as_mut() {
         output.write_fmt(args).expect("Write failed");
     }
 }

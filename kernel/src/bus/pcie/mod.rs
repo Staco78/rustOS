@@ -102,7 +102,7 @@ impl Location {
     #[inline]
     unsafe fn read<T>(&self, off: usize) -> T {
         let ptr = self.addr(off).as_ptr();
-        ptr::read_volatile(ptr)
+        unsafe { ptr::read_volatile(ptr) }
     }
 
     #[inline]
@@ -125,7 +125,7 @@ impl Location {
     #[inline]
     unsafe fn write<T>(&self, off: usize, val: T) {
         let ptr = self.addr(off).as_ptr();
-        ptr::write_volatile(ptr, val)
+        unsafe { ptr::write_volatile(ptr, val) }
     }
 
     #[inline]
@@ -159,6 +159,7 @@ impl Display for Location {
 }
 
 bitflags! {
+    #[derive(Debug, Clone)]
     pub struct Command: u16 {
         const IO_SPACE                  = 0x0001;
         const MEMORY_SPACE              = 0x0002;
@@ -180,6 +181,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Clone)]
     pub struct Status: u16 {
         const RESERVED_0                = 0x0001;
         const RESERVED_1                = 0x0002;

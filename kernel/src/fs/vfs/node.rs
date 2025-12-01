@@ -207,8 +207,8 @@ pub unsafe trait Directory: Debug + Send + Sync {
 pub unsafe trait Block: Debug + Send + Sync {
     fn block_size(&self) -> usize;
 
-    fn get_block(&self, block: BlockIndex) -> Result<BlockRef, Error>;
-    fn get_block_mut(&self, block: BlockIndex) -> Result<BlockMut, Error>;
+    fn get_block(&self, block: BlockIndex) -> Result<BlockRef<'_>, Error>;
+    fn get_block_mut(&self, block: BlockIndex) -> Result<BlockMut<'_>, Error>;
 
     /// Write a whole block without reading it first.
     ///

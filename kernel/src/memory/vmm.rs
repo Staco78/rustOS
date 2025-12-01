@@ -1,24 +1,23 @@
 use super::{
+    AddrSpaceLock, AddrSpaceSelector, MODULES_SPACE_RANGE, PageAllocator, PhysicalAddress,
+    VirtualAddress,
     addr_space::VirtualAddressSpace,
     address::{Physical, Virtual},
     mmu::Mmu,
-    AddrSpaceLock, AddrSpaceSelector, PageAllocator, PhysicalAddress, VirtualAddress,
-    MODULES_SPACE_RANGE,
 };
 use crate::{
-    error::Error,
-    error::MemoryError::*,
+    error::{Error, MemoryError::*},
     memory::{
-        constants::PAGE_SIZE, KERNEL_DATA_RANGE, KERNEL_HEAP_RANGE, LOW_ADDR_SPACE_RANGE,
-        USER_SPACE_RANGE,
+        KERNEL_DATA_RANGE, KERNEL_HEAP_RANGE, LOW_ADDR_SPACE_RANGE, USER_SPACE_RANGE,
+        constants::PAGE_SIZE,
     },
     utils::sync_once_cell::SyncOnceCell,
 };
+use aarch64_cpu::registers::TTBR1_EL1;
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use cortex_a::registers::TTBR1_EL1;
 use log::trace;
 
 static mut KERNEL_ADDR_SPACE: Option<AddrSpaceLock> = None;
@@ -55,7 +54,7 @@ pub fn vmm() -> &'static VirtualMemoryManager<'static> {
 #[inline]
 pub fn get_kernel_addr_space() -> &'static AddrSpaceLock {
     unsafe {
-        KERNEL_ADDR_SPACE
+        (&*&raw const KERNEL_ADDR_SPACE)
             .as_ref()
             .expect("KERNEL_ADDR_SPACE not initialized")
     }
@@ -188,13 +187,15 @@ impl<'a> VirtualMemoryManager<'a> {
 
         let vaddr =
             self.find_free_pages(count, usage, AddrSpaceSelector::Unlocked(&mut addr_space))?;
-        self.map(
-            vaddr,
-            to,
-            count,
-            flags,
-            AddrSpaceSelector::Unlocked(&mut addr_space),
-        )
+        unsafe {
+            self.map(
+                vaddr,
+                to,
+                count,
+                flags,
+                AddrSpaceSelector::Unlocked(&mut addr_space),
+            )
+        }
     }
 
     pub fn alloc_pages(

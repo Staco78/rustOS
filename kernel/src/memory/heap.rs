@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use core::{
     alloc::GlobalAlloc,
     mem::size_of,

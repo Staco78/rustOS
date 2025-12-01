@@ -33,7 +33,7 @@ unsafe impl<R: RawMutex> RawMutex for NoIrqMutexRaw<R> {
 
     #[inline(always)]
     unsafe fn unlock(&self) {
-        self.0.unlock();
+        unsafe { self.0.unlock() };
         restore_exceptions_depth();
     }
 }
@@ -68,7 +68,7 @@ unsafe impl<R: RawRwLock> RawRwLock for NoIrqRwLockRaw<R> {
 
     #[inline(always)]
     unsafe fn unlock_shared(&self) {
-        self.0.unlock_shared();
+        unsafe { self.0.unlock_shared() };
         restore_exceptions_depth();
     }
 
@@ -92,7 +92,7 @@ unsafe impl<R: RawRwLock> RawRwLock for NoIrqRwLockRaw<R> {
 
     #[inline(always)]
     unsafe fn unlock_exclusive(&self) {
-        self.0.unlock_exclusive();
+        unsafe { self.0.unlock_exclusive() };
         restore_exceptions_depth();
     }
 

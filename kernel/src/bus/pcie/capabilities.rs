@@ -44,6 +44,7 @@ pub enum Capability {
 impl Capability {
     unsafe fn from_id(loc: Location, off: usize) -> Self {
         let id = loc.read_u8(off);
+        #[allow(unsafe_op_in_unsafe_fn)]
         match id {
             0x01 => Self::PowerManagement(&*loc.addr(off).as_ptr()),
             0x05 => Self::Msi(&*loc.addr(off).as_ptr()),

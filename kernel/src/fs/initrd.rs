@@ -197,7 +197,7 @@ static DRIVER: Driver = Driver::new();
 pub unsafe fn init(initrd_ptr: PhysicalAddress, initrd_len: usize) {
     register_driver(&DRIVER);
 
-    let data: &[u8] = slice::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len);
+    let data: &[u8] = unsafe { slice::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len) };
     let fs = Arc::new_cyclic(|w| FileSystem::new(w.clone(), data));
     let vec: Vec<u8> =
         unsafe { Vec::from_raw_parts(initrd_ptr.to_virt().as_ptr(), initrd_len, initrd_len) };

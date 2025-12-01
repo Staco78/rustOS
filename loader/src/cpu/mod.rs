@@ -3,22 +3,13 @@ use log::error;
 #[panic_handler]
 pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     if let Some(location) = info.location() {
-        if let Some(message) = info.message() {
-            error!(
-                "Kernel panic in {} at ({}, {}): {}",
-                location.file(),
-                location.line(),
-                location.column(),
-                message
-            );
-        } else {
-            error!(
-                "Kernel panic in {} at ({}, {})",
-                location.file(),
-                location.line(),
-                location.column(),
-            );
-        }
+        error!(
+            "Kernel panic in {} at ({}, {}): {}",
+            location.file(),
+            location.line(),
+            location.column(),
+            info.message()
+        );
     }
 
     halt();

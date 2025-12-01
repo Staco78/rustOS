@@ -1,6 +1,6 @@
 use core::{arch::global_asm, fmt::Display, num::NonZeroU8, sync::atomic::Ordering};
 
-use cortex_a::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
+use aarch64_cpu::registers::{DAIF, ESR_EL1, FAR_EL1, VBAR_EL1};
 use log::{error, info, trace};
 use tock_registers::interfaces::{Readable, Writeable};
 
@@ -119,9 +119,9 @@ impl Display for CpuException {
 
 global_asm!(include_str!("asm.S"));
 
-extern "C" {
+unsafe extern "C" {
     #[allow(improper_ctypes)]
-    static vector_table: ();
+    unsafe static vector_table: ();
 }
 
 pub fn init() {
@@ -131,15 +131,15 @@ pub fn init() {
     info!("Exceptions initialized");
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn exception_handler(frame: *mut InterruptFrame) {
-    let frame = frame.as_mut().unwrap();
+    let frame = unsafe { frame.as_mut() }.unwrap();
     error!(target: "panic", "Exception in CPU {}", cpu::id());
     error!(target: "panic", "{}", frame);
     panic!("{}", CpuException::from_esr(ESR_EL1.get() as u32));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn interrupt_print(i: u32) {
     panic!("Received unwanted interrupt from vector {i}");
 }

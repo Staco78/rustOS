@@ -21,5 +21,7 @@ mov w5, #1
 str w5, [x0, #4] // informs the main core that we have started: set has_started to true
 // the ptr in x0 is invalid after here bc could have dropped the struct
 
+ldr x1, [x0, #0x40]
+
 mov w0, w4
-b ap_main
+br x1

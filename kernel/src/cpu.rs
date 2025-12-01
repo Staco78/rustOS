@@ -1,6 +1,6 @@
 use core::{fmt::Display, panic::PanicInfo};
 
-use cortex_a::{asm::wfi, registers::MPIDR_EL1};
+use aarch64_cpu::{asm::wfi, registers::MPIDR_EL1};
 use log::error;
 use static_assertions::assert_eq_size;
 use tock_registers::interfaces::Readable;
@@ -10,24 +10,15 @@ use crate::interrupts::exceptions::disable_exceptions;
 #[panic_handler]
 pub fn panic_handler(info: &PanicInfo) -> ! {
     if let Some(location) = info.location() {
-        if let Some(message) = info.message() {
-            error!(
-                target: "panic",
-                "Kernel panic in {} at ({}, {}): {}",
-                location.file(),
-                location.line(),
-                location.column(),
-                message
-            );
-        } else {
-            error!(
-                target: "panic",
-                "Kernel panic in {} at ({}, {})",
-                location.file(),
-                location.line(),
-                location.column(),
-            );
-        }
+        let message = info.message();
+        error!(
+            target: "panic",
+            "Kernel panic in {} at ({}, {}): {}",
+            location.file(),
+            location.line(),
+            location.column(),
+            message
+        );
     }
 
     halt();

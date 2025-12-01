@@ -9,7 +9,7 @@ static mut SYMBOLS: BTreeMap<String, usize> = BTreeMap::new();
 pub fn init() {
     let node = fs::get_node("/initrd/ksymbols").expect("ksymbols not found");
     let file = node.as_file().expect("Not a file");
-    let symbols = unsafe { &mut SYMBOLS };
+    let symbols = unsafe { &mut *&raw mut SYMBOLS };
     let buff = file.read_to_end_vec(0).unwrap();
     let mut off = 0;
     while off + 10 < buff.len() {
@@ -23,5 +23,5 @@ pub fn init() {
 
 #[inline]
 pub fn get(name: &str) -> Option<usize> {
-    unsafe { SYMBOLS.get(name).copied() }
+    unsafe { (&*&raw const SYMBOLS).get(name).copied() }
 }

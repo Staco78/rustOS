@@ -70,7 +70,7 @@ impl Action for BuildModuleAction {
         cmd.args(&[
             "--crate-name",
             package.name(),
-            "--edition=2021",
+            "--edition=2024",
             &format!("modules/{}/src/lib.rs", package.name()),
             "--crate-type",
             "staticlib",

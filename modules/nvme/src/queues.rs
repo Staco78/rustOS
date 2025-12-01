@@ -174,7 +174,9 @@ impl CompletionQueue {
             ptr::read_volatile(ptr)
         };
         if entry.phase() {
-            if let Some(id) = id && id != entry.command_id{
+            if let Some(id) = id
+                && id != entry.command_id
+            {
                 return None;
             }
             let mut head = self.head.lock();
@@ -234,6 +236,7 @@ impl CompletionQueue {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Status {
     pub do_not_retry: bool,
@@ -268,6 +271,7 @@ impl From<u16> for Status {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum StatusCodeType {
     Generic(GenericStatus),
@@ -314,6 +318,7 @@ pub enum GenericStatus {
     UnrecoveredError,
     KeyExists,
 
+    #[allow(dead_code)]
     Unknown(NonZeroU8),
 }
 

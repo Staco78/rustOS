@@ -13,8 +13,8 @@ use kernel::{
     error::Error,
     interrupts::{self, InterruptMode, MsiVector},
     memory::{
-        vmm::{vmm, MapFlags},
         AddrSpaceSelector, MemoryUsage, PAGE_SIZE,
+        vmm::{MapFlags, vmm},
     },
     utils::sync_once_cell::SyncOnceCell,
 };
@@ -88,10 +88,7 @@ impl Device {
                 })
             });
             let msix_capability = msix_capability.expect("Device doesn't support MSI-X interrupts");
-            #[allow(cast_ref_to_mut)]
-            unsafe {
-                (*(msix_capability as *const _ as *mut MsixCapability)).enable()
-            };
+            unsafe { (*(msix_capability as *const _ as *mut MsixCapability)).enable() };
             let (bar, off) = msix_capability.table();
             assert_eq!(bar, 0);
             let ptr = (bar0_vaddr + off).as_ptr();
@@ -228,12 +225,12 @@ impl Device {
 
     pub unsafe fn write_submission_tail_doorbell(&self, id: SubmissionQueueId, tail: u16) {
         let ptr = self.get_doorbell_ptr(id.get(), false);
-        ptr::write_volatile(ptr, tail as u32);
+        unsafe { ptr::write_volatile(ptr, tail as u32) };
     }
 
     pub unsafe fn write_completion_head_doorbell(&self, id: CompletionQueueId, head: u16) {
         let ptr = self.get_doorbell_ptr(id.get(), true);
-        ptr::write_volatile(ptr, head as u32);
+        unsafe { ptr::write_volatile(ptr, head as u32) };
     }
 
     /// Safety: the device could write in memory.
@@ -243,7 +240,7 @@ impl Device {
         cmd: Command,
     ) -> CompletionEntry {
         let queue = self.get_submission_queue(queue_id);
-        let cmd_id = self.submit_cmd(&queue, cmd);
+        let cmd_id = unsafe { self.submit_cmd(&queue, cmd) };
 
         let completion_id = queue.completion_id;
         drop(queue);
@@ -260,8 +257,8 @@ impl Device {
             todo!()
         }
 
-        let (tail, command_id) = queue.submit(cmd);
-        self.write_submission_tail_doorbell(queue.id, tail);
+        let (tail, command_id) = unsafe { queue.submit(cmd) };
+        unsafe { self.write_submission_tail_doorbell(queue.id, tail) };
         command_id
     }
 

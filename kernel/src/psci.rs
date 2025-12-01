@@ -53,16 +53,16 @@ global_asm!(
      ret"
 );
 
-extern "C" {
-    fn hvc_call(func: u32, a: u64, b: u64, c: u64, d: u64) -> u64;
+unsafe extern "C" {
+    unsafe fn hvc_call(func: u32, a: u64, b: u64, c: u64, d: u64) -> u64;
 }
 
 #[inline]
 pub unsafe fn cpu_on(cpu_id: u32, entry: PhysicalAddress, context: u64) {
-    let func = INFOS
+    let func = unsafe { &*&raw const INFOS }
         .as_ref()
         .expect("Psci not init")
         .cpu_on
         .expect("No cpu_on func");
-    hvc_call(func.get(), cpu_id as u64, entry.addr() as u64, context, 0);
+    unsafe { hvc_call(func.get(), cpu_id as u64, entry.addr() as u64, context, 0) };
 }

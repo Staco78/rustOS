@@ -87,7 +87,7 @@ impl<'a> FileSystem<'a> {
             .div_ceil(superblock.blocks_per_group) as usize;
         let table_offset = 2048_usize.next_multiple_of(superblock.block_size());
         let table: Box<[BlockGroupDescriptor]> =
-            unsafe { fs::read_slice_boxed(device.deref(), table_offset, block_groups_count) }?;
+            unsafe { fs::read_slice_boxed(device, table_offset, block_groups_count) }?;
         Ok(table)
     }
 

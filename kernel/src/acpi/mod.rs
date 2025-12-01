@@ -11,7 +11,7 @@ use crate::{
 use core::slice;
 
 use static_assertions::assert_eq_size;
-use uefi::table::cfg::{ConfigTableEntry, ACPI2_GUID, ACPI_GUID};
+use uefi::table::cfg::ConfigTableEntry;
 
 use self::rsdp::{AcpiIterator, Rsdp};
 
@@ -21,13 +21,13 @@ pub unsafe fn init(tables: &[ConfigTableEntry]) -> Result<(), Error> {
     let mut acpi = None;
     let mut acpi2 = None;
     for table in tables {
-        if table.guid == ACPI_GUID {
+        if table.guid == ConfigTableEntry::ACPI_GUID {
             acpi = Some(
                 PhysicalAddress::new(table.address.addr())
                     .to_virt()
                     .as_ptr(),
             );
-        } else if table.guid == ACPI2_GUID {
+        } else if table.guid == ConfigTableEntry::ACPI2_GUID {
             acpi2 = Some(
                 PhysicalAddress::new(table.address.addr())
                     .to_virt()
@@ -58,7 +58,7 @@ pub unsafe fn get_table<T>(signature: Signature) -> Option<&'static T> {
     if let Some(iter) = iter_tables() {
         for table in iter {
             if unsafe { (*table).signature == signature } {
-                let r = (table as *const T).as_ref()?;
+                let r = unsafe { (table as *const T).as_ref() }?;
                 let bytes = unsafe {
                     slice::from_raw_parts(table as usize as *const u8, (*table).length as usize)
                 };

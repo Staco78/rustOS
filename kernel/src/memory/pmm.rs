@@ -6,15 +6,18 @@ use crate::{
 };
 
 use super::{
-    address::Physical, constants::PAGE_SIZE, CustomMemoryTypes, PageAllocator, PhysicalAddress,
+    CustomMemoryTypes, PageAllocator, PhysicalAddress, address::Physical, constants::PAGE_SIZE,
 };
 use core::{fmt::Debug, slice};
 use log::trace;
-use uefi::table::boot::{MemoryDescriptor, MemoryType};
+use uefi::{
+    boot::MemoryType,
+    mem::memory_map::{MemoryMap, MemoryMapRef},
+};
 
 pub static mut PHYSICAL_MANAGER: Option<NoIrqMutex<PhysicalMemoryManager>> = None;
 
-pub fn init(memory_map: &'static [MemoryDescriptor]) {
+pub fn init(memory_map: &MemoryMapRef<'static>) {
     unsafe { PHYSICAL_MANAGER = Some(NoIrqMutex::new(PhysicalMemoryManager::new(memory_map))) };
 }
 
@@ -23,11 +26,11 @@ pub struct PhysicalMemoryManager {
 }
 
 impl PhysicalMemoryManager {
-    pub fn new(memory_map: &[MemoryDescriptor]) -> Self {
-        let max_address = Self::get_max_address(memory_map);
+    pub fn new(memory_map: &MemoryMapRef) -> Self {
+        let max_address = Self::get_max_address(&memory_map);
         let bitmap_size = max_address.addr() / PAGE_SIZE / 8;
         let bitmap_page_count = bitmap_size / PAGE_SIZE + (bitmap_size % PAGE_SIZE != 0) as usize;
-        let bitmap_ptr = Self::get_free_space(memory_map, bitmap_page_count)
+        let bitmap_ptr = Self::get_free_space(&memory_map, bitmap_page_count)
             .expect("Cannot find free space for pmm bitmap");
         let bitmap = unsafe {
             slice::from_raw_parts_mut(
@@ -37,18 +40,20 @@ impl PhysicalMemoryManager {
         };
 
         let mut s = Self { bitmap };
-        s.init_bitmap(memory_map);
+        s.init_bitmap(&memory_map);
         s.set_used_range(bitmap_ptr.addr() / PAGE_SIZE, bitmap_page_count);
-        s.set_memory_map_usable(memory_map);
+        s.set_memory_map_usable(&memory_map);
         s
     }
 
-    fn get_max_address(memory_map: &[MemoryDescriptor]) -> PhysicalAddress {
+    fn get_max_address(memory_map: &MemoryMapRef) -> PhysicalAddress {
         let mut max_address = 0;
-        for desc in memory_map {
-            let addr = desc.phys_start as usize + desc.page_count as usize * PAGE_SIZE;
-            if addr > max_address {
-                max_address = addr;
+        for desc in memory_map.entries() {
+            if Self::is_memory_type_usable(desc.ty) {
+                let addr = desc.phys_start as usize + desc.page_count as usize * PAGE_SIZE;
+                if addr > max_address {
+                    max_address = addr;
+                }
             }
         }
         PhysicalAddress::new(max_address)
@@ -66,11 +71,8 @@ impl PhysicalMemoryManager {
     }
 
     // find free space in memory map (used to find where to put the bitmap)
-    fn get_free_space(
-        memory_map: &[MemoryDescriptor],
-        page_count: usize,
-    ) -> Option<PhysicalAddress> {
-        for desc in memory_map {
+    fn get_free_space(memory_map: &MemoryMapRef, page_count: usize) -> Option<PhysicalAddress> {
+        for desc in memory_map.entries() {
             if Self::is_memory_type_usable(desc.ty) && desc.page_count as usize >= page_count {
                 return Some(PhysicalAddress::new(desc.phys_start as usize));
             }
@@ -78,10 +80,10 @@ impl PhysicalMemoryManager {
         None
     }
 
-    fn init_bitmap(&mut self, memory_map: &[MemoryDescriptor]) {
+    fn init_bitmap(&mut self, memory_map: &MemoryMapRef) {
         trace!(target: "pmm", "Init bitmap");
         self.bitmap.fill(0xFF); // all used
-        for desc in memory_map {
+        for desc in memory_map.entries() {
             if Self::is_memory_type_usable(desc.ty) {
                 assert!(desc.phys_start as usize % PAGE_SIZE == 0);
 
@@ -117,9 +119,9 @@ impl PhysicalMemoryManager {
         }
     }
 
-    fn set_memory_map_usable(&mut self, memory_map: &[MemoryDescriptor]) {
+    fn set_memory_map_usable(&mut self, memory_map: &MemoryMapRef) {
         let desc = memory_map
-            .iter()
+            .entries()
             .find(|desc| desc.ty.0 == CustomMemoryTypes::MemoryMap as u32)
             .expect("Memory map region not found");
         assert!(desc.phys_start as usize % PAGE_SIZE == 0);

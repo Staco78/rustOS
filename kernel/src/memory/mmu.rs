@@ -2,10 +2,10 @@ use crate::error::{Error, MemoryError::*};
 use crate::memory::{HIGH_ADDR_SPACE_RANGE, PAGE_SHIFT};
 
 use super::{
+    PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
     address::Physical,
     constants::{ENTRIES_IN_TABLE, PAGE_SIZE},
     vmm::{MapFlags, MapOptions, MapSize},
-    PageAllocator, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
 };
 use core::{arch::asm, fmt::Debug, mem::discriminant, ops::Range, ptr, slice};
 
@@ -15,7 +15,7 @@ mod structs {
     use modular_bitfield::prelude::*;
 
     #[bitfield(bits = 12)]
-    #[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+    #[derive(Debug, Clone, Copy, Specifier)]
     pub struct UpperDescriptorAttributes {
         contigous: bool,
         #[allow(non_snake_case)]
@@ -29,7 +29,7 @@ mod structs {
     }
 
     #[bitfield(bits = 10)]
-    #[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+    #[derive(Debug, Clone, Copy, Specifier)]
     pub struct LowerDescriptorAttributes {
         pub attr_index: B3, // MAIR index
         #[allow(non_snake_case)]
@@ -211,12 +211,12 @@ pub fn invalidate_tlb_all() {
 
 #[inline]
 unsafe fn get_table(addr: *const TableEntry) -> &'static [TableEntry] {
-    slice::from_raw_parts(addr, ENTRIES_IN_TABLE)
+    unsafe { slice::from_raw_parts(addr, ENTRIES_IN_TABLE) }
 }
 
 #[inline]
 unsafe fn get_table_mut(addr: *mut TableEntry) -> &'static mut [TableEntry] {
-    slice::from_raw_parts_mut(addr, ENTRIES_IN_TABLE)
+    unsafe { slice::from_raw_parts_mut(addr, ENTRIES_IN_TABLE) }
 }
 
 #[inline]

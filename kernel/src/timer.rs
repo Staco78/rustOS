@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering}, time::Duration,
 };
 
-use cortex_a::registers::{CNTFRQ_EL0, CNTPCT_EL0, CNTP_CTL_EL0, CNTP_CVAL_EL0, CNTP_TVAL_EL0};
+use aarch64_cpu::registers::{CNTFRQ_EL0, CNTPCT_EL0, CNTP_CTL_EL0, CNTP_CVAL_EL0, CNTP_TVAL_EL0};
 use log::{info, trace};
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 

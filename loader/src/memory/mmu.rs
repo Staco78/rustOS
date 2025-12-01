@@ -4,8 +4,7 @@ use crate::{read_cpu_reg, write_cpu_reg};
 use anyhow::{anyhow, Result};
 use log::trace;
 use uefi::{
-    prelude::BootServices,
-    table::boot::{AllocateType, MemoryType},
+    boot::{self, AllocateType, MemoryType}
 };
 
 use super::{PhysicalAddress, VirtualAddress};
@@ -17,7 +16,7 @@ mod structs {
 
     use modular_bitfield::prelude::*;
 
-    #[derive(BitfieldSpecifier)]
+    #[derive(Specifier)]
     #[bits = 2]
     pub enum Cacheability {
         NonCacheable = 0, // Normal memory, Non-cacheable
@@ -26,7 +25,7 @@ mod structs {
         WbNoWa = 3,       // Normal memory, Write-Back no Write-Allocate Cacheable
     }
 
-    #[derive(BitfieldSpecifier)]
+    #[derive(Specifier)]
     #[bits = 2]
     pub enum Shareability {
         NonShareable = 0,
@@ -62,7 +61,7 @@ mod structs {
     }
 
     #[bitfield(bits = 12)]
-    #[derive(Clone, Copy, BitfieldSpecifier)]
+    #[derive(Clone, Copy, Specifier)]
     pub struct UpperDescriptorAttributes {
         pub contigous: bool,
         #[allow(non_snake_case)]
@@ -76,7 +75,7 @@ mod structs {
     }
 
     #[bitfield(bits = 10)]
-    #[derive(Clone, Copy, BitfieldSpecifier)]
+    #[derive(Clone, Copy, Specifier)]
     pub struct LowerDescriptorAttributes {
         pub attr_index: B3, // MAIR index
         #[allow(non_snake_case)]
@@ -173,15 +172,15 @@ impl TableEntry {
 pub fn init() {
     unsafe {
         TABLE_HIGH.0[0] = TableEntry::create_table_descriptor(VirtualAddress(
-            &TABLE_HIGH_L1_0 as *const _ as u64,
+            &raw const TABLE_HIGH_L1_0 as *const _ as u64,
         ));
         TABLE_HIGH.0[511] = TableEntry::create_table_descriptor(VirtualAddress(
-            &TABLE_HIGH_L1_511 as *const _ as u64,
+            &raw const TABLE_HIGH_L1_511 as *const _ as u64,
         ));
     }
 
-    write_cpu_reg!("TTBR0_EL1", &TABLE_LOW as *const _ as u64);
-    write_cpu_reg!("TTBR1_EL1", &TABLE_HIGH as *const _ as u64);
+    write_cpu_reg!("TTBR0_EL1", &raw const TABLE_LOW as *const _ as u64);
+    write_cpu_reg!("TTBR1_EL1", &raw const TABLE_HIGH as *const _ as u64);
 
     // This equates to:
     // 0 = b01000100 = Normal, Inner/Outer Non-Cacheable
@@ -211,7 +210,6 @@ pub fn init() {
 }
 
 pub fn map_page(
-    boot_services: &BootServices,
     from: VirtualAddress,
     to: PhysicalAddress,
 ) -> Result<()> {
@@ -220,7 +218,7 @@ pub fn map_page(
         "Currently only support mapping page in the upper part of the address space"
     );
     trace!("Map {:#016X?} => {:#016X?}", from.0, to);
-    let l0: &mut [TableEntry; 512] = unsafe { &mut TABLE_HIGH.0 };
+    let l0: &mut [TableEntry; 512] = unsafe { &mut *&raw mut TABLE_HIGH.0 };
     let l0_entry = &mut l0[from.get_l0_index()];
     let l0_entry_desc = unsafe { &mut l0_entry.table_descriptor };
     if l0_entry_desc.present() && l0_entry_desc.block_or_table() == 0 {
@@ -231,11 +229,10 @@ pub fn map_page(
             slice::from_raw_parts_mut((l0_entry_desc.address() << 12) as *mut TableEntry, 512)
         }
     } else {
-        let page = boot_services
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+        let page = boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
             .unwrap();
-        *l0_entry = TableEntry::create_table_descriptor(VirtualAddress(page));
-        unsafe { slice::from_raw_parts_mut(page as *mut TableEntry, 512) }
+        *l0_entry = TableEntry::create_table_descriptor(VirtualAddress(page.addr().get() as u64));
+        unsafe { slice::from_raw_parts_mut(page.as_ptr() as *mut TableEntry, 512) }
     };
 
     let l1_entry = &mut l1[from.get_l1_index()];
@@ -248,11 +245,10 @@ pub fn map_page(
             slice::from_raw_parts_mut((l1_entry_desc.address() << 12) as *mut TableEntry, 512)
         }
     } else {
-        let page = boot_services
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+        let page = boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
             .unwrap();
-        *l1_entry = TableEntry::create_table_descriptor(VirtualAddress(page));
-        unsafe { slice::from_raw_parts_mut(page as *mut TableEntry, 512) }
+        *l1_entry = TableEntry::create_table_descriptor(VirtualAddress(page.addr().get() as u64));
+        unsafe { slice::from_raw_parts_mut(page.as_ptr() as *mut TableEntry, 512) }
     };
 
     let l2_entry = &mut l2[from.get_l2_index()];
@@ -265,11 +261,10 @@ pub fn map_page(
             slice::from_raw_parts_mut((l2_entry_desc.address() << 12) as *mut TableEntry, 512)
         }
     } else {
-        let page = boot_services
-            .allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
+        let page = boot::allocate_pages(AllocateType::AnyPages, MemoryType::LOADER_DATA, 1)
             .unwrap();
-        *l2_entry = TableEntry::create_table_descriptor(VirtualAddress(page));
-        unsafe { slice::from_raw_parts_mut(page as *mut TableEntry, 512) }
+        *l2_entry = TableEntry::create_table_descriptor(VirtualAddress(page.addr().get() as u64));
+        unsafe { slice::from_raw_parts_mut(page.as_ptr() as *mut TableEntry, 512) }
     };
 
     let l3_entry = &mut l3[from.get_l3_index()];

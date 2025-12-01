@@ -1,4 +1,5 @@
 use core::{
+    cell::UnsafeCell,
     fmt::Debug,
     marker::{PhantomData, Unsize},
     mem::{self, MaybeUninit},
@@ -12,7 +13,7 @@ use spin::lock_api::{Mutex, RwLock};
 #[derive(Debug)]
 pub struct SmartPtrInner<T: ?Sized> {
     ref_count: Mutex<usize>,
-    data: T,
+    data: UnsafeCell<T>,
 }
 
 unsafe impl<T: ?Sized + Send> Send for SmartPtrInner<T> {}
@@ -22,7 +23,7 @@ impl<T> SmartPtrInner<T> {
     const fn new(data: T) -> Self {
         Self {
             ref_count: Mutex::new(0),
-            data,
+            data: UnsafeCell::new(data),
         }
     }
 }
@@ -63,7 +64,7 @@ impl<T: ?Sized> SmartPtr<T> {
 impl<T: ?Sized> Deref for SmartPtr<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.ptr.as_ref().data }
+        unsafe { &self.ptr.as_ref().data.as_ref_unchecked() }
     }
 }
 
@@ -177,8 +178,8 @@ pub trait SmartBuff<T> {
         let inner: &SmartPtrInner<T> = unsafe {
             // Safety: we can get a mutable reference because we checked that there is
             // no other reference anywhere above.
-            #[allow(cast_ref_to_mut)]
-            let ptr: &mut _ = &mut *(&inner.data as *const _ as *mut MaybeUninit<T>);
+
+            let ptr = inner.data.as_mut_unchecked();
             MaybeUninit::write(ptr, value);
 
             // Assume init T inside the `SmartPtrInner`.
@@ -216,7 +217,7 @@ pub trait SmartBuff<T> {
     }
 
     #[inline]
-    fn iter(&self) -> SmartBuffIter<Self, T>
+    fn iter(&self) -> SmartBuffIter<'_, Self, T>
     where
         Self: Sized,
     {
@@ -304,7 +305,7 @@ impl<T> FromIterator<T> for SmartPtrBuff<T> {
             .into_iter()
             .map(|v| SmartPtrInner {
                 ref_count: Mutex::new(1),
-                data: MaybeUninit::new(v),
+                data: UnsafeCell::new(MaybeUninit::new(v)),
             })
             .collect();
         let data = vec.into_boxed_slice();

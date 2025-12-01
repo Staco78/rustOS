@@ -47,8 +47,8 @@ pub fn make_obj(in_file: &str, out_file: &str) -> Result<(), Box<dyn Error>> {
                     new_section.append_bss(section.size(), section.align());
                     section_id
                 }
-                SectionKind::Metadata | SectionKind::Other => continue,
-                _ => panic!("Unknown section kind {:?}", section.kind()),
+                SectionKind::Metadata | SectionKind::OtherString | SectionKind::Other => continue,
+                _ => panic!("Unknown section kind {:#?} {:?}", section, section.kind()),
             };
             sections_map.push((section.index(), section_id));
         }

@@ -75,7 +75,7 @@ impl AddrSpaceLock {
     }
 
     #[inline]
-    pub fn lock(&self) -> NoIrqMutexGuard<VirtualAddressSpace> {
+    pub fn lock(&self) -> NoIrqMutexGuard<'_, VirtualAddressSpace> {
         match self {
             Self::Owned(lock) => lock.lock(),
             Self::Ref(lock) => lock.lock(),

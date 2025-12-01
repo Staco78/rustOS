@@ -3,7 +3,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use cortex_a::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1, VBAR_EL1};
+use aarch64_cpu::registers::{MAIR_EL1, SCTLR_EL1, TCR_EL1, TTBR1_EL1, VBAR_EL1};
 use log::{info, trace};
 use tock_registers::interfaces::Readable;
 
@@ -11,9 +11,9 @@ use crate::{
     device_tree::{self, Node},
     interrupts,
     memory::{
-        vmm::{vmm, MapFlags, MapOptions, MapSize},
-        AddrSpaceSelector, MemoryUsage, PhysicalAddress, VirtualAddress, VirtualAddressSpace,
-        PAGE_SIZE,
+        AddrSpaceSelector, MemoryUsage, PAGE_SIZE, PhysicalAddress, VirtualAddress,
+        VirtualAddressSpace,
+        vmm::{MapFlags, MapOptions, MapSize, vmm},
     },
     psci,
     scheduler::SCHEDULER,
@@ -78,11 +78,12 @@ fn start_cpu(id: u32, node: &device_tree::Node, low_addr_space: &mut VirtualAddr
     }
 }
 
-extern "C" {
-    fn ap_start(); // never call that
+unsafe extern "C" {
+    unsafe fn ap_start(); // never call that
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct StartInfos {
     id: u32,
     has_started: AtomicU32,
@@ -93,11 +94,12 @@ struct StartInfos {
     mair: u64,
     tcr: u64,
     sctlr: u64,
+    start_point: VirtualAddress,
 }
 
 fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
     trace!(target: "smp", "Starting cpu {id} with psci");
-    let entry = ap_start as usize;
+    let entry = ap_start as *const () as usize;
     let entry = VirtualAddress::new(entry).to_phys().unwrap();
 
     let start_infos = StartInfos {
@@ -112,6 +114,7 @@ fn start_cpu_psci(id: u32, low_addr_space: &mut VirtualAddressSpace) {
         mair: MAIR_EL1.get(),
         tcr: TCR_EL1.get(),
         sctlr: SCTLR_EL1.get(),
+        start_point: VirtualAddress::from_ptr(ap_main as *const ()),
     };
 
     let ptr = (&start_infos as *const StartInfos).addr();
@@ -137,7 +140,7 @@ fn alloc_ap_stack() -> VirtualAddress {
         + 16 * PAGE_SIZE
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ap_main(id: u32) -> ! {
     info!(target: "smp", "Core {id} online");
     interrupts::chip().init_ap();

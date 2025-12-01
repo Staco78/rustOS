@@ -61,7 +61,7 @@ impl Buffer {
     pub fn read(&self, offset: usize, len: usize) -> &[u8] {
         let slice = &self.slice[offset..offset + len];
         // Safety: this is, in fact, UB but I consider that u8 is always init.
-        unsafe { MaybeUninit::slice_assume_init_ref(slice) }
+        unsafe { slice.assume_init_ref() }
     }
 
     #[inline]
@@ -83,7 +83,7 @@ impl Buffer {
     #[inline]
     pub fn write(&mut self, offset: usize, buff: &[u8]) -> usize {
         let slice = &mut self.slice[offset..offset + buff.len()];
-        MaybeUninit::write_slice(slice, buff);
+        slice.write_copy_of_slice(buff);
         buff.len()
     }
 
@@ -112,7 +112,7 @@ impl Deref for Buffer {
 }
 impl DerefMut for Buffer {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { MaybeUninit::slice_assume_init_mut(&mut self.slice) }
+        unsafe { self.slice.assume_init_mut() }
     }
 }
 

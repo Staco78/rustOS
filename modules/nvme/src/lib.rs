@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(int_roundings)]
-#![feature(let_chains)]
 
 extern crate alloc;
 
@@ -18,7 +17,7 @@ mod namespace;
 mod queues;
 mod regs;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub fn init() -> Result<(), Error> {
     devices::register_device_handler("nvme", device_handler)
         .map_err(|_| Error::CustomStr("Another nvme driver loaded"))?;

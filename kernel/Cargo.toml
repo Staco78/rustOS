@@ -1,7 +1,7 @@
 [package]
 name = "kernel"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,23 +11,23 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 log = { workspace = true }
-uefi = { version = "0.16.0", features = [] }
+uefi = { version = "0.36.1", features = [] }
 static_assertions = "1.1.0"
 cfg-if = "1.0.0"
-modular-bitfield = "0.11.2"
-spin = "0.9.4"
+modular-bitfield = "0.13.0"
+spin = "0.10.0"
 lock_api = "0.4"
 num-traits = { version = "0.2", default-features = false }
-num-derive = "0.3"
+num-derive = "0.4"
 crossbeam-utils = { version = "0.8.12", default-features = false }
-elf = { version = "0.7.0", default-features = false }
+elf = { version = "0.8.0", default-features = false }
 
-tock-registers = "0.8"
-cortex-a = "8.0"
-hashbrown = "0.13.2"
+tock-registers = "0.10"
+hashbrown = "0.16.1"
 thiserror = { version = "1.0", package = "thiserror-core", default-features = false }
-bitflags = "1.3.2"
+bitflags = "2.10.0"
 memoffset = "0.9.0"
+aarch64-cpu = "11.1.0"
 
 [features]
 default = ["qemu_debug", "logger_cpu_id"]

@@ -1,4 +1,4 @@
-use core::mem::{size_of, MaybeUninit};
+use core::mem::{MaybeUninit, size_of};
 
 use alloc::boxed::Box;
 
@@ -17,7 +17,7 @@ pub unsafe fn read_struct<T>(node: &dyn File, offset: usize) -> Result<T, Error>
     if bytes_read < size_of::<T>() {
         Err(Error::IoError)
     } else {
-        Ok(data.assume_init())
+        Ok(unsafe { data.assume_init() })
     }
 }
 
@@ -28,7 +28,7 @@ pub unsafe fn read_slice_boxed<T>(
     count: usize,
 ) -> Result<Box<[T]>, Error> {
     let mut data = Box::new_uninit_slice(count);
-    let bytes = MaybeUninit::slice_as_bytes_mut(&mut data);
+    let bytes = data.as_bytes_mut();
     let buff = Buffer::from_slice_mut(bytes);
     let r = node.read(offset, buff)?;
     if r == buff.len() {

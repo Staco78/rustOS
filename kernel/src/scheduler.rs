@@ -6,11 +6,11 @@ use core::{
     time::Duration,
 };
 
-use alloc::{collections::VecDeque, vec::Vec};
-use cortex_a::{
+use aarch64_cpu::{
     asm,
     registers::{DAIF, TPIDR_EL1},
 };
+use alloc::{collections::VecDeque, vec::Vec};
 use crossbeam_utils::atomic::AtomicCell;
 use log::{info, trace};
 use static_assertions::const_assert;
@@ -20,7 +20,7 @@ use crate::{
     cpu::{self, InterruptFrame},
     device_tree,
     interrupts::{self, CoreSelection},
-    memory::{vmm, AddrSpaceLock},
+    memory::{AddrSpaceLock, vmm},
     scheduler::{
         process::Process,
         thread::{Thread, ThreadEntry},
@@ -46,8 +46,8 @@ pub use smp::register_cpus;
 
 const TIMESLICE: Duration = Duration::from_millis(100);
 
-extern "C" {
-    fn exception_exit(frame: *mut InterruptFrame) -> !;
+unsafe extern "C" {
+    unsafe fn exception_exit(frame: *mut InterruptFrame) -> !;
 }
 
 static DUMMY_CPU: Cpu = Cpu {

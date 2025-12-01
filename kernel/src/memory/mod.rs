@@ -1,10 +1,10 @@
 use core::fmt::Debug;
 
 use crate::{memory::mmu::invalidate_tlb_all, utils::sync_once_cell::SyncOnceCell};
-use cortex_a::registers::TTBR0_EL1;
+use aarch64_cpu::registers::TTBR0_EL1;
 use log::info;
 use tock_registers::interfaces::Writeable;
-use uefi::table::boot::MemoryDescriptor;
+use uefi::mem::memory_map::MemoryMapRef;
 
 mod addr_space;
 mod address;
@@ -19,7 +19,7 @@ pub use addr_space::*;
 pub use address::{PhysicalAddress, VirtualAddress};
 pub use constants::*;
 pub use dma::*;
-pub use vmm::{vmm, MemoryUsage};
+pub use vmm::{MemoryUsage, vmm};
 
 use self::{
     address::{Address, MemoryKind},
@@ -30,12 +30,14 @@ use self::{
 static ALLOCATOR: heap::Allocator = heap::Allocator::new();
 pub static PMM_PAGE_ALLOCATOR: SyncOnceCell<PmmPageAllocator> = SyncOnceCell::new();
 
-pub fn init(memory_map: &'static [MemoryDescriptor]) {
+pub fn init(memory_map: MemoryMapRef<'static>) {
     unsafe {
-        pmm::init(memory_map);
+        pmm::init(&memory_map);
         PMM_PAGE_ALLOCATOR
             .set(PmmPageAllocator::new(
-                pmm::PHYSICAL_MANAGER.as_ref().unwrap_unchecked(),
+                (&*&raw const pmm::PHYSICAL_MANAGER)
+                    .as_ref()
+                    .unwrap_unchecked(),
             ))
             .unwrap();
 

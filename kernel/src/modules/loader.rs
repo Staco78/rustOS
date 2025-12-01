@@ -28,6 +28,7 @@ use crate::{
 };
 
 pub fn load(path: &str) -> Result<(), Error> {
+    info!("Loading module {path}");
     let node = fs::get_node(path)?;
     let file = node.as_file().ok_or(Error::Fs(FsError::NotAFile))?;
 

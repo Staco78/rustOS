@@ -25,7 +25,7 @@ pub struct Rsdp {
 
 impl Rsdp {
     pub unsafe fn from_ptr(ptr: *const Self) -> Result<Self, Error> {
-        let s: Self = *ptr;
+        let s: Self = unsafe { *ptr };
         if s.signature != RSDP_SIGNATURE {
             return Err(Error::CustomStr("Invalid RSDP signature"));
         }

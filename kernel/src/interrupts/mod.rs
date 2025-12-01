@@ -80,7 +80,7 @@ pub type SimpleHandler = fn(u32, usize);
 const DEFAULT_HANDLER: AtomicU128 = AtomicU128::new(0);
 static IRQ_HANDLERS: [AtomicU128; 1020] = [DEFAULT_HANDLER; 1020];
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn interrupt_handler(frame: *mut InterruptFrame) -> *mut InterruptFrame {
     let irq_depth = Cpu::current().irqs_depth.fetch_add(1, Ordering::Relaxed);
     debug_assert_eq!(irq_depth, 0);
@@ -97,7 +97,7 @@ unsafe extern "C" fn interrupt_handler(frame: *mut InterruptFrame) -> *mut Inter
     let data = IRQ_HANDLERS[id as usize].load(Ordering::Relaxed);
     let [handler_ptr, val] = unsafe { mem::transmute::<u128, [usize; 2]>(data) };
     assert!(handler_ptr != 0);
-    let handler: Handler = mem::transmute(handler_ptr);
+    let handler: Handler = unsafe { mem::transmute(handler_ptr) };
     let before = (
         get_exception_state(),
         Cpu::current().irqs_depth.load(Ordering::Relaxed),

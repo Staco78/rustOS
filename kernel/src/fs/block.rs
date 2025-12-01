@@ -54,7 +54,7 @@ unsafe impl Block for BlockDevice {
         self.block_size
     }
 
-    fn get_block(&self, block: BlockIndex) -> Result<BlockRef, Error> {
+    fn get_block(&self, block: BlockIndex) -> Result<BlockRef<'_>, Error> {
         let cache = self.cache.read();
         if let Some(block) = self.get_block_ref(&cache, block) {
             Ok(block)
@@ -72,7 +72,7 @@ unsafe impl Block for BlockDevice {
         }
     }
 
-    fn get_block_mut(&self, block: BlockIndex) -> Result<BlockMut, Error> {
+    fn get_block_mut(&self, block: BlockIndex) -> Result<BlockMut<'_>, Error> {
         let cache = self.cache.read();
         if let Some(block) = self.get_block_ref_mut(&cache, block) {
             Ok(block)
@@ -136,7 +136,7 @@ impl BlockDevice {
         &self,
         cache: &HashMap<BlockIndex, CachedBlock>,
         block: BlockIndex,
-    ) -> Option<BlockRef> {
+    ) -> Option<BlockRef<'_>> {
         let cached_block = cache.get(&block);
         cached_block.map(|cached_block| cached_block.get_ref(self, block))
     }
@@ -145,7 +145,7 @@ impl BlockDevice {
         &self,
         cache: &HashMap<BlockIndex, CachedBlock>,
         block: BlockIndex,
-    ) -> Option<BlockMut> {
+    ) -> Option<BlockMut<'_>> {
         let cached_block = cache.get(&block);
         cached_block.map(|cached_block| cached_block.get_mut(self, block))
     }
@@ -442,7 +442,7 @@ pub unsafe fn get_typed_block<T>(
     device: &dyn Block,
     block: BlockIndex,
     offset: usize,
-) -> Result<TypedBlockRef<T>, Error> {
+) -> Result<TypedBlockRef<'_, T>, Error> {
     assert!(offset + size_of::<T>() <= device.block_size());
     let block = device.get_block(block)?;
     let typed = unsafe { TypedBlockRef::new(block, offset) };
@@ -455,7 +455,7 @@ pub unsafe fn get_typed_block_mut<T>(
     device: &dyn Block,
     block: BlockIndex,
     offset: usize,
-) -> Result<TypedBlockMut<T>, Error> {
+) -> Result<TypedBlockMut<'_, T>, Error> {
     assert!(offset + size_of::<T>() <= device.block_size());
     let block = device.get_block_mut(block)?;
     let typed = unsafe { TypedBlockMut::new(block, offset) };

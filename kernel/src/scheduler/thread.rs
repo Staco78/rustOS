@@ -1,7 +1,8 @@
 use core::{
     fmt::Debug,
     mem::size_of,
-    sync::atomic::{AtomicUsize, Ordering}, time::Duration,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
 };
 
 use crossbeam_utils::atomic::AtomicCell;
@@ -11,16 +12,16 @@ use crate::{
     cpu::InterruptFrame,
     error::Error,
     memory::{
-        vmm::{vmm, MapFlags, MapOptions, MapSize, MemoryUsage},
-        AddrSpaceSelector, PhysicalAddress, VirtualAddress, PAGE_SHIFT, PAGE_SIZE,
+        AddrSpaceSelector, PAGE_SHIFT, PAGE_SIZE, PhysicalAddress, VirtualAddress,
+        vmm::{MapFlags, MapOptions, MapSize, MemoryUsage, vmm},
     },
 };
 
 use super::{
+    Cpu, SCHEDULER,
     consts::{KERNEL_STACK_PAGE_COUNT, USER_STACK_PAGE_COUNT},
     process::ProcessRef,
     sync_ref::SyncRef,
-    Cpu, SCHEDULER,
 };
 
 pub type ThreadId = usize;
